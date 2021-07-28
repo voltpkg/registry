@@ -1,5 +1,5 @@
 [package]
-name = "server"
+name = "registry"
 version = "0.1.0"
 authors = ["XtremeDevX <xtremedevx@gmail.com>"]
 edition = "2018"

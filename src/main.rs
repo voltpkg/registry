@@ -99,16 +99,15 @@ async fn main() {
     );
 
     let mut selected_version: VoltPackage = VoltPackage {
-        name: String::new(),
-        version: String::new(),
-        tarball: String::new(),
         sha1: String::new(),
-        threaded: Some(false),
         peer_dependencies: None,
         dependencies: None,
         bin: None,
         integrity: String::new(),
     };
+
+    let mut version_spec: String = String::new();
+
     let dependencies = Arc::try_unwrap(add.dependencies).unwrap().into_inner();
 
     let mut version_data: HashMap<String, VoltPackage> = HashMap::new();
@@ -132,50 +131,58 @@ async fn main() {
         }
 
         let d1 = dependency.1.clone();
-        let d0 = dependency.0.clone();
 
         if d1.dist.integrity == String::new() {
             integrity = format!("sha1-{}=", d1.dist.shasum);
         } else {
-            integrity = d1.dist.integrity;
+            integrity = d1.clone().dist.integrity;
         }
 
-        let mut pds: Option<Vec<String>> =
-            Some(d1.peer_dependencies.into_iter().map(|(k, _)| k).collect());
+        let mut pds: Option<Vec<String>> = Some(
+            d1.clone()
+                .peer_dependencies
+                .into_iter()
+                .map(|(k, _)| k)
+                .collect(),
+        );
 
         if pds.as_ref().unwrap().len() == 0 {
             pds = None;
         }
 
         let package = VoltPackage {
-            name: d0.name,
-            version: d1.version,
-            tarball: d1.dist.tarball.replace("https", "http"),
-            sha1: d1.dist.shasum,
-            threaded: None,
             peer_dependencies: pds,
             dependencies: deps,
             integrity,
             bin: None,
+            sha1: d1.clone().dist.shasum,
         };
 
         if dependency.1.clone().name == input_packages.clone()[0].to_string() {
             selected_version = package.clone();
+            version_spec = d1.clone().version;
         }
 
-        version_data.insert(package.clone().version, package);
+        version_data.insert(
+            format!("{}@{}", d1.clone().name, d1.clone().version),
+            package,
+        );
     }
 
     let mut map = HashMap::new();
 
-    map.insert(selected_version.clone().version, version_data);
+    map.insert(version_spec.clone(), version_data);
 
     let res: VoltResponse = VoltResponse {
-        version: selected_version.version,
+        schema: 0,
+        latest: version_spec,
         versions: map,
     };
 
-    res.save(format!("packages/{}.json", input_packages.clone()[0].to_string()));
+    res.save(format!(
+        r"packages\{}.json",
+        input_packages.clone()[0].to_string()
+    ));
 }
 
 impl Main {
