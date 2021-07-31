@@ -15,7 +15,7 @@ pub mod api;
 pub mod http_manager;
 pub mod package;
 
-use std::fs::{remove_dir, remove_file, OpenOptions};
+use std::fs::{remove_file, OpenOptions};
 use std::io::{Seek, SeekFrom};
 // Std Imports
 use std::sync::Arc;
@@ -23,6 +23,8 @@ use std::{collections::HashMap, sync::atomic::AtomicI16};
 
 use anyhow::{anyhow, Result};
 use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt};
+
+use serde::{Deserialize, Serialize};
 
 use indicatif::{ProgressBar, ProgressStyle};
 use lz4::EncoderBuilder;
@@ -43,6 +45,19 @@ pub struct Main {
     pub dependencies: Arc<Mutex<Vec<(Package, Version)>>>,
     pub total_dependencies: Arc<AtomicI16>,
     pub sender: mpsc::Sender<()>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BincodeVoltResponse {
+    latest: String,
+    schema: u8,
+    versions: HashMap<String, HashMap<String, BincodeVoltPackage>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BincodeVoltPackage {
+    sha1: Vec<u8>,
+    sha512: Option<Vec<u8>>,
 }
 
 #[tokio::main]
@@ -116,9 +131,6 @@ async fn main() {
     let mut version_data: HashMap<String, VoltPackage> = HashMap::new();
 
     for dependency in dependencies.iter() {
-        #[allow(unused_assignments)]
-        let mut integrity = String::new();
-
         let mut deps: Option<Vec<String>> = Some(
             dependency
                 .clone()
@@ -135,10 +147,10 @@ async fn main() {
 
         let d1 = dependency.1.clone();
 
-        if d1.dist.integrity == String::new() {
-            integrity = format!("sha1-{}=", d1.dist.shasum);
-        } else {
-            integrity = d1.clone().dist.integrity;
+        let mut integrity = None;
+
+        if d1.dist.integrity != String::new() {
+            integrity = Some(d1.clone().dist.integrity);
         }
 
         let mut pds: Option<Vec<String>> = Some(
@@ -182,6 +194,45 @@ async fn main() {
         versions: map,
     };
 
+    let ds_clone = res.clone();
+
+    let mut versions: HashMap<String, HashMap<String, BincodeVoltPackage>> = HashMap::new();
+    versions.insert(ds_clone.clone().latest, HashMap::new());
+
+    let mut bincode_struct: BincodeVoltResponse = BincodeVoltResponse {
+        latest: ds_clone.clone().latest,
+        schema: ds_clone.clone().schema,
+        versions,
+    };
+
+    for (name, package) in res.versions.get(&res.latest).unwrap().iter() {
+        let sha512;
+
+        if package.integrity.is_some() {
+            sha512 = Some(
+                base64::decode(package.integrity.as_ref().unwrap().replace("sha512-", "")).unwrap(),
+            );
+        } else {
+            sha512 = None;
+        }
+
+        let bincode_package: BincodeVoltPackage = BincodeVoltPackage {
+            sha1: package
+                .sha1
+                .as_bytes()
+                .chunks(2)
+                .map(|b| u8::from_str_radix(std::str::from_utf8(b).unwrap(), 16).unwrap())
+                .collect(),
+            sha512,
+        };
+
+        bincode_struct
+            .versions
+            .get_mut(&ds_clone.clone().latest)
+            .unwrap()
+            .insert(name.to_string(), bincode_package);
+    }
+
     let mut input_file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -206,7 +257,7 @@ async fn main() {
         ))
         .unwrap();
 
-    bincode::serialize_into(&input_file, &res).unwrap();
+    bincode::serialize_into(&input_file, &bincode_struct).unwrap();
 
     let mut encoder = EncoderBuilder::new().level(4).build(output_file).unwrap();
 
@@ -217,8 +268,6 @@ async fn main() {
         input_packages.clone()[0].to_string()
     ))
     .unwrap();
-
-    remove_dir("temp").unwrap();
 
     let (_, _) = encoder.finish();
 }

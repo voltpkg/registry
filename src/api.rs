@@ -28,7 +28,7 @@ pub struct VoltPackage {
     pub sha1: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bin: Option<HashMap<String, String>>,
-    pub integrity: String,
+    pub integrity: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peer_dependencies: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
