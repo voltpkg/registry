@@ -37,5 +37,5 @@ pub async fn get_package(name: &str) -> Package {
     let mut body = resp.into_body();
     let body_string = body.text_async().await.unwrap();
 
-    serde_json::from_str(&body_string).unwrap_or_handle_error();
+    serde_json::from_str(&body_string).unwrap()
 }

@@ -15,6 +15,8 @@ pub mod api;
 pub mod http_manager;
 pub mod package;
 
+use std::fs::{remove_dir, remove_file, OpenOptions};
+use std::io::{Seek, SeekFrom};
 // Std Imports
 use std::sync::Arc;
 use std::{collections::HashMap, sync::atomic::AtomicI16};
@@ -23,6 +25,7 @@ use anyhow::{anyhow, Result};
 use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt};
 
 use indicatif::{ProgressBar, ProgressStyle};
+use lz4::EncoderBuilder;
 use package::{Package, Version};
 use tokio::{
     self,
@@ -98,13 +101,13 @@ async fn main() {
             .await
     );
 
-    let mut selected_version: VoltPackage = VoltPackage {
-        sha1: String::new(),
-        peer_dependencies: None,
-        dependencies: None,
-        bin: None,
-        integrity: String::new(),
-    };
+    // let mut selected_version: VoltPackage = VoltPackage {
+    //     sha1: String::new(),
+    //     peer_dependencies: None,
+    //     dependencies: None,
+    //     bin: None,
+    //     integrity: String::new(),
+    // };
 
     let mut version_spec: String = String::new();
 
@@ -159,7 +162,7 @@ async fn main() {
         };
 
         if dependency.1.clone().name == input_packages.clone()[0].to_string() {
-            selected_version = package.clone();
+            // selected_version = package.clone();
             version_spec = d1.clone().version;
         }
 
@@ -179,10 +182,45 @@ async fn main() {
         versions: map,
     };
 
-    res.save(format!(
-        r"packages\{}.json",
+    let mut input_file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .read(true)
+        .truncate(true)
+        .open(format!(
+            r"temp\{}.bin",
+            input_packages.clone()[0].to_string()
+        ))
+        .unwrap();
+
+    input_file.seek(SeekFrom::Start(0)).unwrap();
+
+    let output_file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .read(true)
+        .open(format!(
+            r"bin\{}.bin",
+            input_packages.clone()[0].to_string()
+        ))
+        .unwrap();
+
+    bincode::serialize_into(&input_file, &res).unwrap();
+
+    let mut encoder = EncoderBuilder::new().level(4).build(output_file).unwrap();
+
+    std::io::copy(&mut input_file, &mut encoder).unwrap();
+
+    remove_file(format!(
+        r"temp\{}.bin",
         input_packages.clone()[0].to_string()
-    ));
+    ))
+    .unwrap();
+
+    remove_dir("temp").unwrap();
+
+    let (_, _) = encoder.finish();
 }
 
 impl Main {
