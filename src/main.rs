@@ -116,14 +116,6 @@ async fn main() {
             .await
     );
 
-    // let mut selected_version: VoltPackage = VoltPackage {
-    //     sha1: String::new(),
-    //     peer_dependencies: None,
-    //     dependencies: None,
-    //     bin: None,
-    //     integrity: String::new(),
-    // };
-
     let mut version_spec: String = String::new();
 
     let dependencies = Arc::try_unwrap(add.dependencies).unwrap().into_inner();
