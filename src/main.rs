@@ -15,8 +15,8 @@ pub mod api;
 pub mod http_manager;
 pub mod package;
 
-use std::fs::{remove_file, OpenOptions};
-use std::io::{Seek, SeekFrom};
+use std::fs::OpenOptions;
+use std::path::Path;
 // Std Imports
 use std::sync::Arc;
 use std::{collections::HashMap, sync::atomic::AtomicI16};
@@ -58,6 +58,8 @@ struct BincodeVoltResponse {
 struct BincodeVoltPackage {
     sha1: Vec<u8>,
     sha512: Option<Vec<u8>>,
+    dependencies: Option<Vec<String>>,
+    peer_dependencies: Option<Vec<String>>,
 }
 
 #[tokio::main]
@@ -216,6 +218,8 @@ async fn main() {
                 .map(|b| u8::from_str_radix(std::str::from_utf8(b).unwrap(), 16).unwrap())
                 .collect(),
             sha512,
+            dependencies: None,
+            peer_dependencies: None,
         };
 
         bincode_struct
@@ -225,41 +229,20 @@ async fn main() {
             .insert(name.to_string(), bincode_package);
     }
 
-    let mut input_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .read(true)
-        .truncate(true)
-        .open(format!(
-            r"temp\{}.bin",
-            input_packages.clone()[0].to_string()
-        ))
-        .unwrap();
-
-    input_file.seek(SeekFrom::Start(0)).unwrap();
-
     let output_file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
-        .read(true)
-        .open(format!(
-            r"bin\{}.bin",
-            input_packages.clone()[0].to_string()
-        ))
+        .open(
+            Path::new("bin")
+                .join(&input_packages[0])
+                .with_extension("bin"),
+        )
         .unwrap();
 
-    bincode::serialize_into(&input_file, &bincode_struct).unwrap();
+    let mut encoder = EncoderBuilder::new().level(3).build(output_file).unwrap();
 
-    let mut encoder = EncoderBuilder::new().level(4).build(output_file).unwrap();
-
-    std::io::copy(&mut input_file, &mut encoder).unwrap();
-
-    remove_file(format!(
-        r"temp\{}.bin",
-        input_packages.clone()[0].to_string()
-    ))
-    .unwrap();
+    bincode::serialize_into(&mut encoder, &bincode_struct).unwrap();
 
     let (_, _) = encoder.finish();
 }
