@@ -15,7 +15,7 @@ pub mod api;
 pub mod http_manager;
 pub mod package;
 
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::path::Path;
 // Std Imports
 use std::sync::Arc;
@@ -24,10 +24,10 @@ use std::{collections::HashMap, sync::atomic::AtomicI16};
 use anyhow::{anyhow, Result};
 use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt};
 
+use lz4::EncoderBuilder;
 use serde::{Deserialize, Serialize};
 
 use indicatif::{ProgressBar, ProgressStyle};
-use lz4::EncoderBuilder;
 use package::{Package, Version};
 use tokio::{
     self,
@@ -60,6 +60,14 @@ struct BincodeVoltPackage {
     sha512: Option<Vec<u8>>,
     dependencies: Option<Vec<String>>,
     peer_dependencies: Option<Vec<String>>,
+}
+
+fn compress(source: &Path, destination: &Path) {
+    let mut input_file = File::open(source).unwrap();
+    let output_file = File::create(destination).unwrap();
+    let mut encoder = EncoderBuilder::new().level(3).build(output_file).unwrap();
+    std::io::copy(&mut input_file, &mut encoder).unwrap();
+    let (_output, result) = encoder.finish();
 }
 
 #[tokio::main]
@@ -218,8 +226,8 @@ async fn main() {
                 .map(|b| u8::from_str_radix(std::str::from_utf8(b).unwrap(), 16).unwrap())
                 .collect(),
             sha512,
-            dependencies: None,
-            peer_dependencies: None,
+            dependencies: package.dependencies.clone(),
+            peer_dependencies: package.peer_dependencies.clone(),
         };
 
         bincode_struct
@@ -229,22 +237,27 @@ async fn main() {
             .insert(name.to_string(), bincode_package);
     }
 
-    let output_file = OpenOptions::new()
+    let mut output_file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .open(
-            Path::new("bin")
+            Path::new("temp")
                 .join(&input_packages[0])
                 .with_extension("bin"),
         )
         .unwrap();
 
-    let mut encoder = EncoderBuilder::new().level(3).build(output_file).unwrap();
+    bincode::serialize_into(&mut output_file, &bincode_struct).unwrap();
 
-    bincode::serialize_into(&mut encoder, &bincode_struct).unwrap();
-
-    let (_, _) = encoder.finish();
+    compress(
+        &Path::new("temp")
+            .join(&input_packages[0])
+            .with_extension("bin"),
+        &Path::new("bin")
+            .join(&input_packages[0])
+            .with_extension("bin"),
+    );
 }
 
 impl Main {
