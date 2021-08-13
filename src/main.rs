@@ -15,9 +15,11 @@ pub mod api;
 pub mod http_manager;
 pub mod package;
 
-use std::fs::{File, OpenOptions};
-use std::path::Path;
 // Std Imports
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::path::Path;
+
 use std::sync::Arc;
 use std::{collections::HashMap, sync::atomic::AtomicI16};
 
@@ -48,18 +50,22 @@ pub struct Main {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct BincodeVoltResponse {
+struct JSONVoltResponse {
     latest: String,
     schema: u8,
-    versions: HashMap<String, HashMap<String, BincodeVoltPackage>>,
+    #[serde(flatten)]
+    versions: HashMap<String, HashMap<String, JSONVoltPackage>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct BincodeVoltPackage {
-    pub integrity: Vec<u8>,
+struct JSONVoltPackage {
+    pub integrity: String,
     pub tarball: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bin: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub peer_dependencies: Option<Vec<String>>,
 }
 
@@ -116,7 +122,7 @@ async fn main() {
     progress_bar.finish_with_message("[DONE]");
 
     println!(
-        "Loaded {} dependencies.",
+        "Resolved {} dependencies.",
         add.dependencies
             .lock()
             .map(|deps| deps
@@ -200,10 +206,10 @@ async fn main() {
 
     let ds_clone = res.clone();
 
-    let mut versions: HashMap<String, HashMap<String, BincodeVoltPackage>> = HashMap::new();
+    let mut versions: HashMap<String, HashMap<String, JSONVoltPackage>> = HashMap::new();
     versions.insert(ds_clone.clone().latest, HashMap::new());
 
-    let mut bincode_struct: BincodeVoltResponse = BincodeVoltResponse {
+    let mut bincode_struct: JSONVoltResponse = JSONVoltResponse {
         latest: ds_clone.clone().latest,
         schema: ds_clone.clone().schema,
         versions,
@@ -211,16 +217,13 @@ async fn main() {
 
     for (name, package) in res.versions.get(&res.latest).unwrap().iter() {
         let integrity = if let Some(integrity) = &package.integrity {
-            Some(
-                base64::decode(integrity.replace("sha512-", ""))
-                    .expect("Why will this never fail? Should you unwrap here?"),
-            )
+            integrity.clone().replace("sha512-", "")
         } else {
-            Some(base64::decode(&package.sha1).unwrap())
+            package.clone().sha1
         };
 
-        let bincode_package: BincodeVoltPackage = BincodeVoltPackage {
-            integrity: integrity.unwrap(),
+        let bincode_package: JSONVoltPackage = JSONVoltPackage {
+            integrity: integrity,
             bin: package.bin.clone(),
             tarball: package.tarball.clone(),
             peer_dependencies: package.peer_dependencies.clone(),
@@ -241,19 +244,21 @@ async fn main() {
         .open(
             Path::new("temp")
                 .join(&input_packages[0])
-                .with_extension("bin"),
+                .with_extension("json"),
         )
         .unwrap();
 
-    bincode::serialize_into(&mut output_file, &bincode_struct).unwrap();
+    let json_data = serde_json::to_string(&bincode_struct).unwrap();
+
+    output_file.write(json_data.as_bytes()).unwrap();
 
     compress(
         &Path::new("temp")
             .join(&input_packages[0])
-            .with_extension("bin"),
-        &Path::new("bin")
+            .with_extension("json"),
+        &Path::new("packages")
             .join(&input_packages[0])
-            .with_extension("bin"),
+            .with_extension("json"),
     );
 }
 
