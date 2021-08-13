@@ -56,10 +56,11 @@ struct BincodeVoltResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BincodeVoltPackage {
-    sha1: Vec<u8>,
-    sha512: Option<Vec<u8>>,
-    dependencies: Option<Vec<String>>,
-    peer_dependencies: Option<Vec<String>>,
+    pub integrity: Vec<u8>,
+    pub tarball: String,
+    pub bin: Option<HashMap<String, String>>,
+    pub dependencies: Option<Vec<String>>,
+    pub peer_dependencies: Option<Vec<String>>,
 }
 
 fn compress(source: &Path, destination: &Path) {
@@ -173,6 +174,7 @@ async fn main() {
             integrity,
             bin: None,
             sha1: d1.clone().dist.shasum,
+            tarball: d1.clone().dist.tarball,
         };
 
         if dependency.1.clone().name == input_packages.clone()[0].to_string() {
@@ -208,26 +210,21 @@ async fn main() {
     };
 
     for (name, package) in res.versions.get(&res.latest).unwrap().iter() {
-        let sha512;
-
-        if package.integrity.is_some() {
-            sha512 = Some(
-                base64::decode(package.integrity.as_ref().unwrap().replace("sha512-", "")).unwrap(),
-            );
+        let integrity = if let Some(integrity) = &package.integrity {
+            Some(
+                base64::decode(integrity.replace("sha512-", ""))
+                    .expect("Why will this never fail? Should you unwrap here?"),
+            )
         } else {
-            sha512 = None;
-        }
+            Some(base64::decode(&package.sha1).unwrap())
+        };
 
         let bincode_package: BincodeVoltPackage = BincodeVoltPackage {
-            sha1: package
-                .sha1
-                .as_bytes()
-                .chunks(2)
-                .map(|b| u8::from_str_radix(std::str::from_utf8(b).unwrap(), 16).unwrap())
-                .collect(),
-            sha512,
-            dependencies: package.dependencies.clone(),
+            integrity: integrity.unwrap(),
+            bin: package.bin.clone(),
+            tarball: package.tarball.clone(),
             peer_dependencies: package.peer_dependencies.clone(),
+            dependencies: package.dependencies.clone(),
         };
 
         bincode_struct

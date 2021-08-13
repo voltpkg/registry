@@ -26,6 +26,7 @@ pub struct VoltResponse {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct VoltPackage {
     pub sha1: String,
+    pub tarball: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bin: Option<HashMap<String, String>>,
     pub integrity: Option<String>,
