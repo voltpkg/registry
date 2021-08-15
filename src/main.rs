@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 
 use indicatif::{ProgressBar, ProgressStyle};
 use package::{Package, Version};
+use ssri::Integrity;
 use tokio::{
     self,
     sync::{mpsc, Mutex},
@@ -209,7 +210,7 @@ async fn main() {
     let mut versions: HashMap<String, HashMap<String, JSONVoltPackage>> = HashMap::new();
     versions.insert(ds_clone.clone().latest, HashMap::new());
 
-    let mut bincode_struct: JSONVoltResponse = JSONVoltResponse {
+    let mut json_struct: JSONVoltResponse = JSONVoltResponse {
         latest: ds_clone.clone().latest,
         schema: ds_clone.clone().schema,
         versions,
@@ -217,24 +218,24 @@ async fn main() {
 
     for (name, package) in res.versions.get(&res.latest).unwrap().iter() {
         let integrity = if let Some(integrity) = &package.integrity {
-            integrity.clone().replace("sha512-", "")
+            integrity.clone()
         } else {
-            package.clone().sha1
+            format!("sha1-{}", base64::encode(package.clone().sha1))
         };
 
-        let bincode_package: JSONVoltPackage = JSONVoltPackage {
-            integrity: integrity,
+        let json_package: JSONVoltPackage = JSONVoltPackage {
+            integrity,
             bin: package.bin.clone(),
             tarball: package.tarball.clone(),
             peer_dependencies: package.peer_dependencies.clone(),
             dependencies: package.dependencies.clone(),
         };
 
-        bincode_struct
+        json_struct
             .versions
             .get_mut(&ds_clone.clone().latest)
             .unwrap()
-            .insert(name.to_string(), bincode_package);
+            .insert(name.to_string(), json_package);
     }
 
     let mut output_file = OpenOptions::new()
@@ -248,7 +249,7 @@ async fn main() {
         )
         .unwrap();
 
-    let json_data = serde_json::to_string(&bincode_struct).unwrap();
+    let json_data = serde_json::to_string(&json_struct).unwrap();
 
     output_file.write(json_data.as_bytes()).unwrap();
 

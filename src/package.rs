@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct Package {
     #[serde(rename = "_id")]
-    pub id: String,
+    pub id: Option<String>,
     #[serde(rename = "_rev")]
     pub rev: Option<String>,
     pub name: String,
