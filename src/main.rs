@@ -21,6 +21,7 @@ use std::io::Write;
 use std::path::Path;
 
 use std::sync::Arc;
+use std::time::Instant;
 use std::{collections::HashMap, sync::atomic::AtomicI16};
 
 use anyhow::{anyhow, Result};
@@ -216,15 +217,47 @@ async fn main() {
         versions,
     };
 
+    let mut name_hash = String::new();
+
     for (name, package) in res.versions.get(&res.latest).unwrap().iter() {
-        let integrity = if let Some(integrity) = &package.integrity {
+        let hash_string = if let Some(integrity) = &package.integrity {
             integrity.clone()
         } else {
             format!("sha1-{}", base64::encode(package.clone().sha1))
         };
 
+        let start = Instant::now();
+
+        let integrity: Integrity = hash_string.parse().unwrap();
+
+        let algo = integrity.pick_algorithm();
+
+        let hash = integrity
+            .hashes
+            .into_iter()
+            .find(|h| h.algorithm == algo)
+            .map(|h| Integrity { hashes: vec![h] })
+            .map(|i| i.to_hex().1)
+            .unwrap();
+
+        let split = name.split("@").collect::<Vec<&str>>();
+
+        if name.starts_with("@") {
+            let clean_name = format!("@{}", split[1]);
+
+            if input_packages[0] == clean_name {
+                name_hash = hash.clone();
+            }
+        } else {
+            let clean_name = split[0];
+
+            if input_packages[0] == clean_name {
+                name_hash = hash.clone();
+            }
+        }
+
         let json_package: JSONVoltPackage = JSONVoltPackage {
-            integrity,
+            integrity: hash,
             bin: package.bin.clone(),
             tarball: package.tarball.clone(),
             peer_dependencies: package.peer_dependencies.clone(),
@@ -244,7 +277,7 @@ async fn main() {
         .truncate(true)
         .open(
             Path::new("temp")
-                .join(&input_packages[0])
+                .join(name_hash.clone())
                 .with_extension("json"),
         )
         .unwrap();
@@ -255,10 +288,10 @@ async fn main() {
 
     compress(
         &Path::new("temp")
-            .join(&input_packages[0])
+            .join(name_hash.clone())
             .with_extension("json"),
         &Path::new("packages")
-            .join(&input_packages[0])
+            .join(name_hash.clone())
             .with_extension("json"),
     );
 }
