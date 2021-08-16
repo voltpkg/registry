@@ -59,46 +59,42 @@ while True:
 
     print('✅ Found Job')
 
-    if current is not None:
-        set_doc_complete(data['chunk'])
+    # if current is not None:
+        # set_doc_complete(data['chunk'])
 
-        START = int(data['chunk'].split('-')[0]) # 100000
-        END = int(data['chunk'].split('-')[1]) # 200000
-        
-        pb = Bar('📈 Ranking', max=(END - START), fill='█')
-        
-        download_counts = {}
+    START =  977500# 100000
+    END = 1000000 # 200000
+    
+    pb = Bar('📈 Ranking', max=(END - START), fill='█')
+    
+    download_counts = {}
 
-        index = 0
-        stops = 0
+    index = 0
+    stops = 0
 
-        for row in rows[START:END]:
-          if index <= 499:
-            row = row['id']
-            res = requests.get(f'http://api.npmjs.org/downloads/point/last-month/{row}')
-            try:
-                download_counts[row] = res.json()['downloads']
-            except:
-                pb.next()
-                index += 1
-                continue
+    for row in rows[START:END]:
+      if index <= 499:
+        row = row['id']
+        res = requests.get(f'http://api.npmjs.org/downloads/point/last-month/{row}')
+        try:
+            download_counts[row] = res.json()['downloads']
+        except:
             pb.next()
             index += 1
-          else:
-            download_counts = dict(sorted(download_counts.items(), key = lambda item : item[1], reverse = True))
-            print('📦 Sorted Data')
+            continue
+        pb.next()
+        index += 1
+      else:
+        download_counts = dict(sorted(download_counts.items(), key = lambda item : item[1], reverse = True))
+        print('📦 Sorted Data')
 
-            with open(f'index/ranked{(START + (500 * stops))}-{(START + (500 * stops) + 500)}.json', 'w+') as f:
-                f.write(json.dumps(download_counts, indent = 4))
+        with open(f'index/ranked{(START + (500 * stops))}-{(START + (500 * stops) + 500)}.json', 'w+') as f:
+            f.write(json.dumps(download_counts, indent = 4))
 
-            stops += 1
-            print('📖 Saved To ranked.json')
-            download_counts = {}
-            index = 0
-            sleep(randrange(1000, 1400))
+        stops += 1
+        print('📖 Saved To ranked.json')
+        download_counts = {}
+        index = 0
+        sleep(randrange(500, 800))
 
-        pb.finish()
-
-        
-    else:
-      break
+    pb.finish()
