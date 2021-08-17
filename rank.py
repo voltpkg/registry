@@ -62,7 +62,7 @@ while True:
     # if current is not None:
         # set_doc_complete(data['chunk'])
 
-    START =  977500# 100000
+    START =  999500# 100000
     END = 1000000 # 200000
     
     pb = Bar('📈 Ranking', max=(END - START), fill='█')
