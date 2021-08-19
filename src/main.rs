@@ -226,8 +226,6 @@ async fn main() {
             format!("sha1-{}", base64::encode(package.clone().sha1))
         };
 
-        let start = Instant::now();
-
         let integrity: Integrity = hash_string.parse().unwrap();
 
         let algo = integrity.pick_algorithm();
@@ -246,13 +244,29 @@ async fn main() {
             let clean_name = format!("@{}", split[1]);
 
             if input_packages[0] == clean_name {
-                name_hash = hash.clone();
+                match algo {
+                    ssri::Algorithm::Sha1 => {
+                        name_hash = format!("sha1-{}", hash);
+                    }
+                    ssri::Algorithm::Sha512 => {
+                        name_hash = format!("sha512-{}", hash);
+                    }
+                    _ => {}
+                }
             }
         } else {
             let clean_name = split[0];
 
             if input_packages[0] == clean_name {
-                name_hash = hash.clone();
+                match algo {
+                    ssri::Algorithm::Sha1 => {
+                        name_hash = format!("sha1-{}", hash);
+                    }
+                    ssri::Algorithm::Sha512 => {
+                        name_hash = format!("sha512-{}", hash);
+                    }
+                    _ => {}
+                }
             }
         }
 
