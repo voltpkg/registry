@@ -21,7 +21,6 @@ use std::io::Write;
 use std::path::Path;
 
 use std::sync::Arc;
-use std::time::Instant;
 use std::{collections::HashMap, sync::atomic::AtomicI16};
 
 use anyhow::{anyhow, Result};
@@ -271,7 +270,7 @@ async fn main() {
         }
 
         let json_package: JSONVoltPackage = JSONVoltPackage {
-            integrity: hash,
+            integrity: hash_string,
             bin: package.bin.clone(),
             tarball: package.tarball.clone(),
             peer_dependencies: package.peer_dependencies.clone(),

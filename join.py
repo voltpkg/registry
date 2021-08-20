@@ -12,5 +12,5 @@ ranked = dict(sorted(massive_dict.items(), key = lambda item : item[1], reverse 
 
 index = 0
 
-with open('indexed/ranked-0-100000.json', 'w') as outfile:
+with open('indexed/ranked-700000-800000.json', 'w') as outfile:
     json.dump(ranked, outfile)
