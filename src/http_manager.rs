@@ -16,6 +16,7 @@
 
 // Crate Level Imports
 use crate::package::Package;
+use isahc::AsyncReadResponseExt;
 
 /// Request a package from `registry.yarnpkg.com`
 ///
@@ -30,12 +31,11 @@ use crate::package::Package;
 /// ## Returns
 /// * `Result<Option<Package>, GetPackageError>`
 pub async fn get_package(name: &str) -> Package {
-    let resp = chttp::get_async(format!("http://registry.yarnpkg.com/{}", name))
+    let mut resp = isahc::get_async(format!("http://registry.npmjs.com/{}", name))
         .await
         .unwrap();
 
-    let mut body = resp.into_body();
-    let body_string = body.text_async().await.unwrap();
+    let body_string = resp.text().await.unwrap();
 
     serde_json::from_str(&body_string).unwrap_or_else(|e| {
         println!("{} {}", name, e);

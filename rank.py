@@ -62,8 +62,8 @@ while True:
     # if current is not None:
         # set_doc_complete(data['chunk'])
 
-    START =  700000# 100000
-    END = 800000 # 200000
+    START =  635000# 100000
+    END = 700000 # 200000
     
     pb = Bar('📈 Ranking', max=(END - START), fill='█')
     
@@ -95,6 +95,6 @@ while True:
         print('📖 Saved To ranked.json')
         download_counts = {}
         index = 0
-        sleep(randrange(500, 800))
+        sleep(randrange(300, 600))
 
     pb.finish()

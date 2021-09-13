@@ -69,15 +69,6 @@ struct JSONVoltPackage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peer_dependencies: Option<Vec<String>>,
 }
-
-fn compress(source: &Path, destination: &Path) {
-    let mut input_file = File::open(source).unwrap();
-    let output_file = File::create(destination).unwrap();
-    let mut encoder = EncoderBuilder::new().level(3).build(output_file).unwrap();
-    std::io::copy(&mut input_file, &mut encoder).unwrap();
-    let (_output, result) = encoder.finish();
-}
-
 #[tokio::main]
 async fn main() {
     let mut input_packages: Vec<String> = std::env::args().collect();
@@ -289,8 +280,8 @@ async fn main() {
         .create(true)
         .truncate(true)
         .open(
-            Path::new("temp")
-                .join(name_hash.clone())
+            Path::new("packages")
+                .join(input_packages[0].clone())
                 .with_extension("json"),
         )
         .unwrap();
@@ -298,15 +289,6 @@ async fn main() {
     let json_data = serde_json::to_string(&json_struct).unwrap();
 
     output_file.write(json_data.as_bytes()).unwrap();
-
-    compress(
-        &Path::new("temp")
-            .join(name_hash.clone())
-            .with_extension("json"),
-        &Path::new("packages")
-            .join(name_hash.clone())
-            .with_extension("json"),
-    );
 }
 
 impl Main {
