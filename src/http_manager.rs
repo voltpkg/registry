@@ -31,7 +31,7 @@ use isahc::AsyncReadResponseExt;
 /// ## Returns
 /// * `Result<Option<Package>, GetPackageError>`
 pub async fn get_package(name: &str) -> Package {
-    let mut resp = isahc::get_async(format!("http://registry.npmjs.com/{}", name))
+    let mut resp = isahc::get_async(format!("https://registry.npmjs.com/{}", name))
         .await
         .unwrap();
 

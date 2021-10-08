@@ -95,7 +95,7 @@ async fn main() {
         ProgressStyle::default_bar()
             .progress_chars("=> ")
             .template(&format!(
-                "{} [{{bar:40.magenta/blue}}] {{msg:.blue}}",
+                "{} [{{bar:40.magenta/green}}] {{msg:.blue}}",
                 "Fetching dependencies".bright_blue()
             )),
     );
@@ -281,7 +281,7 @@ async fn main() {
         .truncate(true)
         .open(
             Path::new("packages")
-                .join(input_packages[0].clone())
+                .join(name_hash.clone())
                 .with_extension("json"),
         )
         .unwrap();
