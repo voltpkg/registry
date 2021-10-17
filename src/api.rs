@@ -18,9 +18,8 @@ use std::collections::HashMap;
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct VoltResponse {
-    pub latest: String,
-    pub schema: u8,
-    pub versions: HashMap<String, HashMap<String, VoltPackage>>,
+    #[serde(flatten)]
+    pub versions: HashMap<String, VoltPackage>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

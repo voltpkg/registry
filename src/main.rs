@@ -52,10 +52,8 @@ pub struct Main {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct JSONVoltResponse {
-    latest: String,
-    schema: u8,
     #[serde(flatten)]
-    versions: HashMap<String, HashMap<String, JSONVoltPackage>>,
+    versions: HashMap<String, JSONVoltPackage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +67,7 @@ struct JSONVoltPackage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peer_dependencies: Option<Vec<String>>,
 }
+
 #[tokio::main]
 async fn main() {
     let mut input_packages: Vec<String> = std::env::args().collect();
@@ -186,19 +185,13 @@ async fn main() {
         );
     }
 
-    let mut map = HashMap::new();
-
-    map.insert(version_spec.clone(), version_data);
-
     let res: VoltResponse = VoltResponse {
-        schema: 0,
-        latest: version_spec,
-        versions: map,
+        versions: version_data,
     };
 
     let ds_clone = res.clone();
 
-    let mut versions: HashMap<String, HashMap<String, JSONVoltPackage>> = HashMap::new();
+    let mut versions: HashMap<String, JSONVoltPackage> = HashMap::new();
     versions.insert(ds_clone.clone().latest, HashMap::new());
 
     let mut json_struct: JSONVoltResponse = JSONVoltResponse {
