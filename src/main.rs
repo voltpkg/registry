@@ -16,7 +16,7 @@ pub mod http_manager;
 pub mod package;
 
 // Std Imports
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 
@@ -26,7 +26,6 @@ use std::{collections::HashMap, sync::atomic::AtomicI16};
 use anyhow::{anyhow, Result};
 use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt};
 
-use lz4::EncoderBuilder;
 use serde::{Deserialize, Serialize};
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -123,8 +122,8 @@ async fn main() {
                 .len())
             .await
     );
-
-    let mut version_spec: String = String::new();
+    // TODO: Ensure that the total number of dependencies is more than 10, otherwise, it's usually
+    // faster to resolve using the same algorithm as yarn and npm
 
     let dependencies = Arc::try_unwrap(add.dependencies).unwrap().into_inner();
 
@@ -148,7 +147,7 @@ async fn main() {
         let d1 = dependency.1.clone();
 
         let mut integrity = None;
-
+        
         if d1.dist.integrity != String::new() {
             integrity = Some(d1.clone().dist.integrity);
         }
@@ -174,10 +173,6 @@ async fn main() {
             tarball: d1.clone().dist.tarball,
         };
 
-        if dependency.1.clone().name == input_packages.clone()[0].to_string() {
-            // selected_version = package.clone();
-            version_spec = d1.clone().version;
-        }
 
         version_data.insert(
             format!("{}@{}", d1.clone().name, d1.clone().version),
@@ -189,20 +184,15 @@ async fn main() {
         versions: version_data,
     };
 
-    let ds_clone = res.clone();
-
-    let mut versions: HashMap<String, JSONVoltPackage> = HashMap::new();
-    versions.insert(ds_clone.clone().latest, HashMap::new());
+    let versions: HashMap<String, JSONVoltPackage> = HashMap::new();
 
     let mut json_struct: JSONVoltResponse = JSONVoltResponse {
-        latest: ds_clone.clone().latest,
-        schema: ds_clone.clone().schema,
         versions,
     };
 
     let mut name_hash = String::new();
 
-    for (name, package) in res.versions.get(&res.latest).unwrap().iter() {
+    for (name, package) in res.versions.iter() {
         let hash_string = if let Some(integrity) = &package.integrity {
             integrity.clone()
         } else {
@@ -263,8 +253,6 @@ async fn main() {
 
         json_struct
             .versions
-            .get_mut(&ds_clone.clone().latest)
-            .unwrap()
             .insert(name.to_string(), json_package);
     }
 
