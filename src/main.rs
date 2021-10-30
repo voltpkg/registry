@@ -147,7 +147,7 @@ async fn main() {
         let d1 = dependency.1.clone();
 
         let mut integrity = None;
-        
+
         if d1.dist.integrity != String::new() {
             integrity = Some(d1.clone().dist.integrity);
         }
