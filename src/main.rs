@@ -173,7 +173,6 @@ async fn main() {
             tarball: d1.clone().dist.tarball,
         };
 
-
         version_data.insert(
             format!("{}@{}", d1.clone().name, d1.clone().version),
             package,
@@ -186,9 +185,7 @@ async fn main() {
 
     let versions: HashMap<String, JSONVoltPackage> = HashMap::new();
 
-    let mut json_struct: JSONVoltResponse = JSONVoltResponse {
-        versions,
-    };
+    let mut json_struct: JSONVoltResponse = JSONVoltResponse { versions };
 
     let mut name_hash = String::new();
 
@@ -251,9 +248,7 @@ async fn main() {
             dependencies: package.dependencies.clone(),
         };
 
-        json_struct
-            .versions
-            .insert(name.to_string(), json_package);
+        json_struct.versions.insert(name.to_string(), json_package);
     }
 
     let mut output_file = OpenOptions::new()
@@ -262,7 +257,7 @@ async fn main() {
         .truncate(true)
         .open(
             Path::new("packages")
-                .join(name_hash.clone())
+                .join(input_packages[0].clone().to_string())
                 .with_extension("json"),
         )
         .unwrap();
