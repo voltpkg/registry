@@ -40,8 +40,6 @@ use colored::Colorize;
 
 use std::sync::atomic::Ordering;
 
-use crate::api::{VoltPackage, VoltResponse};
-
 #[derive(Clone)]
 pub struct Main {
     pub dependencies: Arc<Mutex<Vec<(Package, Version)>>>,
@@ -50,13 +48,14 @@ pub struct Main {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct JSONVoltResponse {
+struct SpeedyVoltResponse {
+    version: String,
     #[serde(flatten)]
-    versions: HashMap<String, JSONVoltPackage>,
+    versions: HashMap<String, SpeedyVoltPackage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct JSONVoltPackage {
+struct SpeedyVoltPackage {
     pub integrity: String,
     pub tarball: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -127,7 +126,7 @@ async fn main() {
 
     let dependencies = Arc::try_unwrap(add.dependencies).unwrap().into_inner();
 
-    let mut version_data: HashMap<String, VoltPackage> = HashMap::new();
+    let mut version_data: HashMap<String, SpeedyVoltPackage> = HashMap::new();
 
     for dependency in dependencies.iter() {
         let mut deps: Option<Vec<String>> = Some(
@@ -146,10 +145,12 @@ async fn main() {
 
         let d1 = dependency.1.clone();
 
-        let mut integrity = None;
+        let mut integrity = String::new();
 
         if d1.dist.integrity != String::new() {
-            integrity = Some(d1.clone().dist.integrity);
+            integrity = d1.clone().dist.integrity;
+        } else {
+            integrity = format!("sha1-{}", base64::encode(d1.clone().dist.tarball));
         }
 
         let mut pds: Option<Vec<String>> = Some(
@@ -164,12 +165,11 @@ async fn main() {
             pds = None;
         }
 
-        let package = VoltPackage {
+        let package = SpeedyVoltPackage {
             peer_dependencies: pds,
             dependencies: deps,
-            integrity,
+            integrity: integrity,
             bin: None,
-            sha1: d1.clone().dist.shasum,
             tarball: d1.clone().dist.tarball,
         };
 
@@ -179,92 +179,27 @@ async fn main() {
         );
     }
 
-    let res: VoltResponse = VoltResponse {
+    let res: SpeedyVoltResponse = SpeedyVoltResponse {
+        version: String::new(),
         versions: version_data,
     };
 
-    let versions: HashMap<String, JSONVoltPackage> = HashMap::new();
+    println!("{:?}", res);
 
-    let mut json_struct: JSONVoltResponse = JSONVoltResponse { versions };
+    // let mut output_file = OpenOptions::new()
+    //     .write(true)
+    //     .create(true)
+    //     .truncate(true)
+    //     .open(
+    //         Path::new("packages")
+    //             .join(input_packages[0].clone().to_string())
+    //             .with_extension("json"),
+    //     )
+    //     .unwrap();
 
-    let mut name_hash = String::new();
+    // let json_data = serde_json::to_string(&speedy_struct).unwrap();
 
-    for (name, package) in res.versions.iter() {
-        let hash_string = if let Some(integrity) = &package.integrity {
-            integrity.clone()
-        } else {
-            format!("sha1-{}", base64::encode(package.clone().sha1))
-        };
-
-        let integrity: Integrity = hash_string.parse().unwrap();
-
-        let algo = integrity.pick_algorithm();
-
-        let hash = integrity
-            .hashes
-            .into_iter()
-            .find(|h| h.algorithm == algo)
-            .map(|h| Integrity { hashes: vec![h] })
-            .map(|i| i.to_hex().1)
-            .unwrap();
-
-        let split = name.split("@").collect::<Vec<&str>>();
-
-        if name.starts_with("@") {
-            let clean_name = format!("@{}", split[1]);
-
-            if input_packages[0] == clean_name {
-                match algo {
-                    ssri::Algorithm::Sha1 => {
-                        name_hash = format!("sha1-{}", hash);
-                    }
-                    ssri::Algorithm::Sha512 => {
-                        name_hash = format!("sha512-{}", hash);
-                    }
-                    _ => {}
-                }
-            }
-        } else {
-            let clean_name = split[0];
-
-            if input_packages[0] == clean_name {
-                match algo {
-                    ssri::Algorithm::Sha1 => {
-                        name_hash = format!("sha1-{}", hash);
-                    }
-                    ssri::Algorithm::Sha512 => {
-                        name_hash = format!("sha512-{}", hash);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        let json_package: JSONVoltPackage = JSONVoltPackage {
-            integrity: hash_string,
-            bin: package.bin.clone(),
-            tarball: package.tarball.clone(),
-            peer_dependencies: package.peer_dependencies.clone(),
-            dependencies: package.dependencies.clone(),
-        };
-
-        json_struct.versions.insert(name.to_string(), json_package);
-    }
-
-    let mut output_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(
-            Path::new("packages")
-                .join(input_packages[0].clone().to_string())
-                .with_extension("json"),
-        )
-        .unwrap();
-
-    let json_data = serde_json::to_string(&json_struct).unwrap();
-
-    output_file.write(json_data.as_bytes()).unwrap();
+    // output_file.write(json_data.as_bytes()).unwrap();
 }
 
 impl Main {
