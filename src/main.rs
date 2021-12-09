@@ -26,13 +26,9 @@ use std::{collections::HashMap, sync::atomic::AtomicI16};
 // use rkyv::archived_root;
 use anyhow::{anyhow, Result};
 use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt};
-
+use speedy::{Writable, Readable};
 // use serde::{Deserialize, Serialize};
 
-use rkyv::{
-    ser::{serializers::AllocSerializer, Serializer},
-    Archive, Deserialize, Serialize,
-};
 
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -53,13 +49,13 @@ pub struct Main {
     pub sender: mpsc::Sender<()>,
 }
 
-#[derive(Debug, Clone, Archive, Deserialize, Serialize,)]
+#[derive(Debug, Clone, Writable, Readable)]
 struct SpeedyVoltResponse {
     version: String,
     versions: HashMap<String, SpeedyVoltPackage>,
 }
 
-#[derive(Debug, Clone, Archive, Deserialize, Serialize,)]
+#[derive(Debug, Clone, Writable, Readable)]
 struct SpeedyVoltPackage {
     pub integrity: String,
     pub tarball: String,
@@ -193,14 +189,9 @@ async fn main() {
         versions: version_data,
     };
 
-    let mut serializer = AllocSerializer::<256>::default();
-    serializer.serialize_value(&res).unwrap();
+    let bytes = res.write_to_vec().unwrap();
 
-
-    let bytes = serializer.into_serializer().into_inner();
-
-
-    let mut file = File::create(PathBuf::from("packages").join(format!("{}.rkyv", input_packages[0].clone()))).unwrap();
+    let mut file = File::create(PathBuf::from("packages").join(format!("{}.sp", input_packages[0].clone()))).unwrap();
 
     file.write(&bytes).unwrap();
 
