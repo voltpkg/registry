@@ -16,21 +16,27 @@ pub mod http_manager;
 pub mod package;
 
 // Std Imports
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::Path;
+use std::fs::File;
 
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::{collections::HashMap, sync::atomic::AtomicI16};
 
+// use rkyv::archived_root;
 use anyhow::{anyhow, Result};
 use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt};
 
-use serde::{Deserialize, Serialize};
+// use serde::{Deserialize, Serialize};
+
+use rkyv::{
+    ser::{serializers::AllocSerializer, Serializer},
+    Archive, Deserialize, Serialize,
+};
+
 
 use indicatif::{ProgressBar, ProgressStyle};
 use package::{Package, Version};
-use ssri::Integrity;
 use tokio::{
     self,
     sync::{mpsc, Mutex},
@@ -47,22 +53,18 @@ pub struct Main {
     pub sender: mpsc::Sender<()>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Archive, Deserialize, Serialize,)]
 struct SpeedyVoltResponse {
     version: String,
-    #[serde(flatten)]
     versions: HashMap<String, SpeedyVoltPackage>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Archive, Deserialize, Serialize,)]
 struct SpeedyVoltPackage {
     pub integrity: String,
     pub tarball: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub bin: Option<HashMap<String, String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub peer_dependencies: Option<Vec<String>>,
 }
 
@@ -128,6 +130,8 @@ async fn main() {
 
     let mut version_data: HashMap<String, SpeedyVoltPackage> = HashMap::new();
 
+    let mut parent_version: String = String::new();
+
     for dependency in dependencies.iter() {
         let mut deps: Option<Vec<String>> = Some(
             dependency
@@ -165,6 +169,7 @@ async fn main() {
             pds = None;
         }
 
+        #[allow(unused_assignments)]
         let package = SpeedyVoltPackage {
             peer_dependencies: pds,
             dependencies: deps,
@@ -173,6 +178,10 @@ async fn main() {
             tarball: d1.clone().dist.tarball,
         };
 
+        if d1.clone().name == input_packages[0].clone() {
+            parent_version  = d1.clone().name;
+        }
+
         version_data.insert(
             format!("{}@{}", d1.clone().name, d1.clone().version),
             package,
@@ -180,26 +189,36 @@ async fn main() {
     }
 
     let res: SpeedyVoltResponse = SpeedyVoltResponse {
-        version: String::new(),
+        version: parent_version,
         versions: version_data,
     };
 
-    println!("{:?}", res);
+    let mut serializer = AllocSerializer::<256>::default();
+    serializer.serialize_value(&res).unwrap();
 
-    // let mut output_file = OpenOptions::new()
-    //     .write(true)
-    //     .create(true)
-    //     .truncate(true)
-    //     .open(
-    //         Path::new("packages")
-    //             .join(input_packages[0].clone().to_string())
-    //             .with_extension("json"),
-    //     )
-    //     .unwrap();
 
-    // let json_data = serde_json::to_string(&speedy_struct).unwrap();
+    let bytes = serializer.into_serializer().into_inner();
 
-    // output_file.write(json_data.as_bytes()).unwrap();
+
+    let mut file = File::create(PathBuf::from("packages").join(format!("{}.rkyv", input_packages[0].clone()))).unwrap();
+
+    file.write(&bytes).unwrap();
+
+    // deser
+    // drop(file);
+
+    // let mut file = File::open(format!("packages\\{}.rkyv", input_packages[0].clone())).unwrap();
+
+    // let start = std::time::Instant::now();
+
+    // let mut bytes: Vec<u8> = vec![];
+
+    // file.read_to_end(&mut bytes).unwrap();
+
+    // let archived = unsafe { archived_root::<SpeedyVoltResponse>(&bytes[..]) };
+    // let deserialized: SpeedyVoltResponse = SpeedyVoltResponse::read_from_buffer(&bytes).unwrap();
+
+    // println!("Rkyv, deser: {}", start.elapsed().as_secs_f32());
 }
 
 impl Main {
