@@ -26,10 +26,8 @@ use std::{collections::HashMap, sync::atomic::AtomicI16};
 // use rkyv::archived_root;
 use anyhow::{anyhow, Result};
 use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt};
-use speedy::{Writable, Readable};
+use speedy::{Readable, Writable};
 // use serde::{Deserialize, Serialize};
-
-
 
 use indicatif::{ProgressBar, ProgressStyle};
 use package::{Package, Version};
@@ -51,8 +49,9 @@ pub struct Main {
 
 #[derive(Debug, Clone, Writable, Readable)]
 struct SpeedyVoltResponse {
-    version: String,
-    versions: HashMap<String, SpeedyVoltPackage>,
+    version: String,                          // the latest version of the package
+    versions: HashMap<String, String>,        // version and corresponding shasum
+    tree: HashMap<String, SpeedyVoltPackage>, // the flattened dependency tree for the latest version of the package
 }
 
 #[derive(Debug, Clone, Writable, Readable)]
@@ -175,7 +174,7 @@ async fn main() {
         };
 
         if d1.clone().name == input_packages[0].clone() {
-            parent_version  = d1.clone().name;
+            parent_version = d1.clone().name;
         }
 
         version_data.insert(
@@ -186,12 +185,14 @@ async fn main() {
 
     let res: SpeedyVoltResponse = SpeedyVoltResponse {
         version: parent_version,
-        versions: version_data,
+        versions: tree: version_data,
     };
 
     let bytes = res.write_to_vec().unwrap();
 
-    let mut file = File::create(PathBuf::from("packages").join(format!("{}.sp", input_packages[0].clone()))).unwrap();
+    let mut file =
+        File::create(PathBuf::from("packages").join(format!("{}.sp", input_packages[0].clone())))
+            .unwrap();
 
     file.write(&bytes).unwrap();
 
