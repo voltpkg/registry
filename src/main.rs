@@ -11,7 +11,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-pub mod api;
 pub mod http_manager;
 pub mod package;
 
@@ -23,11 +22,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::{collections::HashMap, sync::atomic::AtomicI16};
 
-// use rkyv::archived_root;
 use anyhow::{anyhow, Result};
 use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt};
 use speedy::{Readable, Writable};
-// use serde::{Deserialize, Serialize};
 
 use indicatif::{ProgressBar, ProgressStyle};
 use package::{Package, Version};
@@ -48,19 +45,28 @@ pub struct Main {
 }
 
 #[derive(Debug, Clone, Writable, Readable)]
-struct SpeedyVoltResponse {
-    version: String,                          // the latest version of the package
-    versions: HashMap<String, String>,        // version and corresponding shasum
-    tree: HashMap<String, SpeedyVoltPackage>, // the flattened dependency tree for the latest version of the package
+struct VoltResponse {
+    version: String,                    // the latest version of the package
+    versions: Vec<String>,              // list of versions of the package
+    tree: HashMap<String, VoltPackage>, // the flattened dependency tree for the latest version of the package <name@version, data>
 }
 
 #[derive(Debug, Clone, Writable, Readable)]
-struct SpeedyVoltPackage {
-    pub integrity: String,
-    pub tarball: String,
-    pub bin: Option<HashMap<String, String>>,
-    pub dependencies: Option<Vec<String>>,
-    pub peer_dependencies: Option<Vec<String>>,
+struct VoltPackage {
+    pub name: String,                                       // the name of the package
+    pub version: String,                                    // the version of the package
+    pub integrity: String, // sha-1 base64 encoded hash or the "integrity" field if it exists
+    pub tarball: String,   // url to the tarball to fetch
+    pub bin: Option<HashMap<String, String>>, // binary scripts required by / for the package
+    pub dependencies: Option<HashMap<String, String>>, // dependencies of the package
+    pub dev_dependencies: Option<HashMap<String, String>>, // dev dependencies of the package
+    pub peer_dependencies: Option<HashMap<String, String>>, // peer dependencies of the package
+    pub peer_dependencies_meta: Option<HashMap<String, String>>, // peer dependencies metadata of the package
+    pub optional_dependencies: Option<HashMap<String, String>>, // optional dependencies of the package
+    pub overrides: Option<HashMap<String, String>>,             // overrides specific to the package
+    pub engines: Option<HashMap<String, String>>, // engines compatible with the package
+    pub os: Option<HashMap<String, String>>,      // operating systems compatible with the package
+    pub cpu: Option<HashMap<String, String>>,     // cpu architectures compatible with the package
 }
 
 #[tokio::main]
@@ -96,7 +102,7 @@ async fn main() {
 
     let mut done: i16 = 0;
 
-    while let Some(_) = rx.recv().await {
+    while rx.recv().await.is_some() {
         done += 1;
         let total = add.total_dependencies.load(Ordering::Relaxed);
         if done == total {
@@ -114,18 +120,16 @@ async fn main() {
             .map(|deps| deps
                 .iter()
                 .map(|(dep, ver)| format!("{}: {}", dep.name, ver.version))
-                .collect::<Vec<_>>()
-                .len())
+                .count())
             .await
     );
-    // TODO: Ensure that the total number of dependencies is more than 10, otherwise, it's usually
-    // faster to resolve using the same algorithm as yarn and npm
 
     let dependencies = Arc::try_unwrap(add.dependencies).unwrap().into_inner();
 
-    let mut version_data: HashMap<String, SpeedyVoltPackage> = HashMap::new();
+    let mut version_data: HashMap<String, VoltPackage> = HashMap::new();
 
     let mut parent_version: String = String::new();
+    let mut parent_versions: Vec<String> = vec![];
 
     for dependency in dependencies.iter() {
         let mut deps: Option<Vec<String>> = Some(
@@ -144,7 +148,14 @@ async fn main() {
 
         let d1 = dependency.1.clone();
 
-        let mut integrity = String::new();
+        parent_versions = dependency
+            .0
+            .versions
+            .keys()
+            .map(|v| v.to_owned())
+            .collect::<Vec<String>>();
+
+        let integrity;
 
         if d1.dist.integrity != String::new() {
             integrity = d1.clone().dist.integrity;
@@ -160,15 +171,28 @@ async fn main() {
                 .collect(),
         );
 
-        if pds.as_ref().unwrap().len() == 0 {
+        if pds.as_ref().unwrap().is_empty() {
             pds = None;
         }
 
+        let mut ddps: Option<Vec<String>> = Some(
+            d1.clone()
+                .dev_dependencies
+                .keys()
+                .map(|v| v.to_owned())
+                .collect(),
+        );
+
+        if ddps.as_ref().unwrap().is_empty() {
+            ddps = None;
+        }
+
         #[allow(unused_assignments)]
-        let package = SpeedyVoltPackage {
-            peer_dependencies: pds,
+        let package = VoltPackage {
             dependencies: deps,
-            integrity: integrity,
+            dev_dependencies: ddps,
+            peer_dependencies: pds,
+            integrity,
             bin: None,
             tarball: d1.clone().dist.tarball,
         };
@@ -183,9 +207,10 @@ async fn main() {
         );
     }
 
-    let res: SpeedyVoltResponse = SpeedyVoltResponse {
+    let res: VoltResponse = VoltResponse {
         version: parent_version,
-        versions: tree: version_data,
+        versions: parent_versions,
+        tree: version_data,
     };
 
     let bytes = res.write_to_vec().unwrap();
@@ -194,7 +219,7 @@ async fn main() {
         File::create(PathBuf::from("packages").join(format!("{}.sp", input_packages[0].clone())))
             .unwrap();
 
-    file.write(&bytes).unwrap();
+    file.write_all(&bytes).unwrap();
 
     // deser
     // drop(file);
@@ -207,8 +232,8 @@ async fn main() {
 
     // file.read_to_end(&mut bytes).unwrap();
 
-    // let archived = unsafe { archived_root::<SpeedyVoltResponse>(&bytes[..]) };
-    // let deserialized: SpeedyVoltResponse = SpeedyVoltResponse::read_from_buffer(&bytes).unwrap();
+    // let archived = unsafe { archived_root::<VoltResponse>(&bytes[..]) };
+    // let deserialized: VoltResponse = VoltResponse::read_from_buffer(&bytes).unwrap();
 
     // println!("Rkyv, deser: {}", start.elapsed().as_secs_f32());
 }
@@ -226,7 +251,7 @@ impl Main {
         package_name: &str,
         version_range: Option<semver_rs::Range>,
     ) -> Result<(Package, Version)> {
-        let package = http_manager::get_package(&package_name).await;
+        let package = http_manager::get_package(package_name).await;
 
         let version: Version = match &version_range {
             Some(req) => {
@@ -252,7 +277,7 @@ impl Main {
             None => package.versions.get(&package.dist_tags.latest),
         }
         .ok_or_else(|| {
-            if let Some(_) = version_range {
+            if version_range.is_some() {
                 anyhow!("Version for '{}' is not found", &package_name)
             } else {
                 anyhow!("Unable to find latest version for '{}'", &package_name)
@@ -319,11 +344,8 @@ impl Main {
                 }));
             }
 
-            loop {
-                match workers.next().await {
-                    Some(result) => result??,
-                    None => break,
-                }
+            while let Some(result) = workers.next().await {
+                result??
             }
 
             self.sender.send(()).await.ok();

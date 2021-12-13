@@ -27,13 +27,7 @@ pub struct Package {
     #[serde(rename = "dist-tags")]
     pub dist_tags: DistTags,
     pub versions: HashMap<String, Version>,
-    // pub time: HashMap<String, String>,
-    // pub maintainers: Vec<Maintainer>,
-    // pub description: Option<String>,
-    // pub homepage: Option<String>,
-    // pub author: Option<Author>,
     // pub bugs: Option<Bugs>,
-    // pub license: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
