@@ -31,14 +31,23 @@ use isahc::AsyncReadResponseExt;
 /// ## Returns
 /// * `Result<Option<Package>, GetPackageError>`
 pub async fn get_package(name: &str) -> Package {
-    let mut resp = isahc::get_async(format!("https://registry.npmjs.com/{}", name))
+    let client = isahc::HttpClientBuilder::new()
+        .default_header(
+            "Accept",
+            "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*",
+        )
+        .build()
+        .unwrap();
+
+    let mut resp = client.get_async(format!("https://registry.npmjs.com/{}", name))
         .await
         .unwrap();
 
     let body_string = resp.text().await.unwrap();
 
     serde_json::from_str(&body_string).unwrap_or_else(|e| {
-        println!("{} {}", name, e);
+        println!("{}", body_string);
+        println!("{}: {}", name, e);
         std::process::exit(1);
     })
 }

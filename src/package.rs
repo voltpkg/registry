@@ -49,7 +49,7 @@ pub struct Version {
     pub dev_dependencies: HashMap<String, String>,
     pub optional_dependencies: HashMap<String, String>,
     pub overrides: HashMap<String, String>,
-    pub engines: HashMap<String, String>,
+    pub engines: Engine,
     pub bin: Bin,
     pub os: Vec<String>,
     pub cpu: Vec<String>,
@@ -60,6 +60,20 @@ pub struct Version {
     #[serde(rename = "_npmVersion")]
     pub npm_version: String,
     pub dist: Dist,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Readable, Writable)]
+#[serde(untagged)]
+pub enum Engine {
+    String(String),
+    List(Vec<String>),
+    Map(HashMap<String, String>),
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Engine::String(String::new())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Readable, Writable)]

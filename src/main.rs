@@ -27,7 +27,7 @@ use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt}
 use speedy::{Readable, Writable};
 
 use indicatif::{ProgressBar, ProgressStyle};
-use package::{Bin, Package, Version};
+use package::{Bin, Engine, Package, Version};
 use tokio::{
     self,
     sync::{mpsc, Mutex},
@@ -64,9 +64,9 @@ struct VoltPackage {
     pub peer_dependencies_meta: Option<HashMap<String, String>>, // peer dependencies metadata of the package
     pub optional_dependencies: Option<HashMap<String, String>>, // optional dependencies of the package
     pub overrides: Option<HashMap<String, String>>,             // overrides specific to the package
-    pub engines: Option<HashMap<String, String>>, // engines compatible with the package
-    pub os: Option<Vec<String>>,                  // operating systems compatible with the package
-    pub cpu: Option<Vec<String>>,                 // cpu architectures compatible with the package
+    pub engines: Option<Engine>,  // engines compatible with the package
+    pub os: Option<Vec<String>>,  // operating systems compatible with the package
+    pub cpu: Option<Vec<String>>, // cpu architectures compatible with the package
 }
 
 #[tokio::main]
@@ -193,10 +193,30 @@ async fn main() {
             overrides = None;
         }
 
-        let mut engines: Option<HashMap<String, String>> = Some(d1.engines);
+        let engines: Option<Engine>;
 
-        if engines.as_ref().unwrap().is_empty() {
-            engines = None;
+        match d1.engines {
+            Engine::String(string) => {
+                if string.is_empty() {
+                    engines = None;
+                } else {
+                    engines = Some(Engine::String(string));
+                }
+            }
+            Engine::List(vec) => {
+                if vec.is_empty() {
+                    engines = None;
+                } else {
+                    engines = Some(Engine::List(vec));
+                }
+            }
+            Engine::Map(map) => {
+                if map.is_empty() {
+                    engines = None;
+                } else {
+                    engines = Some(Engine::Map(map));
+                }
+            }
         }
 
         let mut os: Option<Vec<String>> = Some(d1.os);
@@ -250,8 +270,6 @@ async fn main() {
         versions: parent_versions,
         tree: version_data,
     };
-
-    println!("{:#?}", res);
 
     let bytes = res.write_to_vec().unwrap();
 
