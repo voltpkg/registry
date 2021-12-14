@@ -168,7 +168,24 @@ async fn main() {
             scripts = None;
         }
 
-        let bin: Option<Bin> = Some(d1.bin);
+        let bin: Option<Bin>;
+
+        match d1.bin {
+            Bin::String(string) => {
+                if string.is_empty() {
+                    bin = None;
+                } else {
+                    bin = Some(Bin::String(string));
+                }
+            }
+            Bin::Map(map) => {
+                if map.is_empty() {
+                    bin = None;
+                } else {
+                    bin = Some(Bin::Map(map));
+                }
+            }
+        }
 
         let mut overrides: Option<HashMap<String, String>> = Some(d1.overrides);
 
