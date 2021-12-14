@@ -27,7 +27,7 @@ use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt}
 use speedy::{Readable, Writable};
 
 use indicatif::{ProgressBar, ProgressStyle};
-use package::{Package, Version};
+use package::{Bin, Package, Version};
 use tokio::{
     self,
     sync::{mpsc, Mutex},
@@ -57,16 +57,16 @@ struct VoltPackage {
     pub version: String,                                    // the version of the package
     pub integrity: String, // sha-1 base64 encoded hash or the "integrity" field if it exists
     pub tarball: String,   // url to the tarball to fetch
-    pub bin: Option<HashMap<String, String>>, // binary scripts required by / for the package
+    pub bin: Option<Bin>,  // binary scripts required by / for the package
+    pub scripts: Option<HashMap<String, String>>, // scripts required by / for the package
     pub dependencies: Option<HashMap<String, String>>, // dependencies of the package
-    pub dev_dependencies: Option<HashMap<String, String>>, // dev dependencies of the package
     pub peer_dependencies: Option<HashMap<String, String>>, // peer dependencies of the package
     pub peer_dependencies_meta: Option<HashMap<String, String>>, // peer dependencies metadata of the package
     pub optional_dependencies: Option<HashMap<String, String>>, // optional dependencies of the package
     pub overrides: Option<HashMap<String, String>>,             // overrides specific to the package
     pub engines: Option<HashMap<String, String>>, // engines compatible with the package
-    pub os: Option<HashMap<String, String>>,      // operating systems compatible with the package
-    pub cpu: Option<HashMap<String, String>>,     // cpu architectures compatible with the package
+    pub os: Option<Vec<String>>,                  // operating systems compatible with the package
+    pub cpu: Option<Vec<String>>,                 // cpu architectures compatible with the package
 }
 
 #[tokio::main]
@@ -132,15 +132,7 @@ async fn main() {
     let mut parent_versions: Vec<String> = vec![];
 
     for dependency in dependencies.iter() {
-        let mut deps: Option<Vec<String>> = Some(
-            dependency
-                .clone()
-                .1
-                .dependencies
-                .into_iter()
-                .map(|(k, _)| k)
-                .collect(),
-        );
+        let mut deps: Option<HashMap<String, String>> = Some(dependency.1.dependencies.clone());
 
         if deps.as_ref().unwrap().len() == 0 {
             deps = None;
@@ -148,61 +140,90 @@ async fn main() {
 
         let d1 = dependency.1.clone();
 
-        parent_versions = dependency
-            .0
-            .versions
-            .keys()
-            .map(|v| v.to_owned())
-            .collect::<Vec<String>>();
-
         let integrity;
 
         if d1.dist.integrity != String::new() {
-            integrity = d1.clone().dist.integrity;
+            integrity = d1.dist.integrity.clone();
         } else {
-            integrity = format!("sha1-{}", base64::encode(d1.clone().dist.tarball));
+            integrity = format!("sha1-{}", base64::encode(d1.dist.tarball.clone()));
         }
 
-        let mut pds: Option<Vec<String>> = Some(
-            d1.clone()
-                .peer_dependencies
-                .into_iter()
-                .map(|(k, _)| k)
-                .collect(),
-        );
+        // convert each of these into something that satisfies Option
+        let mut peer_dependencies: Option<HashMap<String, String>> = Some(d1.peer_dependencies);
 
-        if pds.as_ref().unwrap().is_empty() {
-            pds = None;
+        if peer_dependencies.as_ref().unwrap().is_empty() {
+            peer_dependencies = None;
         }
 
-        let mut ddps: Option<Vec<String>> = Some(
-            d1.clone()
-                .dev_dependencies
-                .keys()
-                .map(|v| v.to_owned())
-                .collect(),
-        );
+        let mut optional_dependencies: Option<HashMap<String, String>> =
+            Some(d1.optional_dependencies);
 
-        if ddps.as_ref().unwrap().is_empty() {
-            ddps = None;
+        if optional_dependencies.as_ref().unwrap().is_empty() {
+            optional_dependencies = None;
         }
 
-        #[allow(unused_assignments)]
+        let mut scripts: Option<HashMap<String, String>> = Some(d1.scripts);
+
+        if scripts.as_ref().unwrap().is_empty() {
+            scripts = None;
+        }
+
+        let bin: Option<Bin> = Some(d1.bin);
+
+        let mut overrides: Option<HashMap<String, String>> = Some(d1.overrides);
+
+        if overrides.as_ref().unwrap().is_empty() {
+            overrides = None;
+        }
+
+        let mut engines: Option<HashMap<String, String>> = Some(d1.engines);
+
+        if engines.as_ref().unwrap().is_empty() {
+            engines = None;
+        }
+
+        let mut os: Option<Vec<String>> = Some(d1.os);
+
+        if os.as_ref().unwrap().is_empty() {
+            os = None;
+        }
+
+        let mut cpu: Option<Vec<String>> = Some(d1.cpu);
+
+        if cpu.as_ref().unwrap().is_empty() {
+            cpu = None;
+        }
+
         let package = VoltPackage {
+            name: d1.name.clone(),
+            version: d1.version.clone(),
             dependencies: deps,
-            dev_dependencies: ddps,
-            peer_dependencies: pds,
+            peer_dependencies,
             integrity,
-            bin: None,
-            tarball: d1.clone().dist.tarball,
+            bin,
+            scripts,
+            tarball: d1.dist.tarball.clone(),
+            peer_dependencies_meta: None,
+            optional_dependencies,
+            overrides,
+            engines,
+            os,
+            cpu,
         };
 
-        if d1.clone().name == input_packages[0].clone() {
-            parent_version = d1.clone().name;
+        if d1.name.clone() == input_packages[0].clone() {
+            parent_version = d1.name.clone();
+
+            parent_versions = dependency
+                .0
+                .versions
+                .keys()
+                .map(|v| v.to_owned())
+                .collect::<Vec<String>>();
         }
 
         version_data.insert(
-            format!("{}@{}", d1.clone().name, d1.clone().version),
+            format!("{}@{}", d1.name.clone(), d1.version.clone()),
             package,
         );
     }
@@ -212,6 +233,8 @@ async fn main() {
         versions: parent_versions,
         tree: version_data,
     };
+
+    println!("{:#?}", res);
 
     let bytes = res.write_to_vec().unwrap();
 
