@@ -149,24 +149,23 @@ async fn main() {
         }
 
         // convert each of these into something that satisfies Option
-        let mut peer_dependencies: Option<HashMap<String, String>> = Some(d1.peer_dependencies);
+        let peer_dependencies = if d1.peer_dependencies.is_empty() {
+            None
+        } else {
+            Some(d1.peer_dependencies)
+        };
 
-        if peer_dependencies.as_ref().unwrap().is_empty() {
-            peer_dependencies = None;
-        }
+        let optional_dependencies = if d1.optional_dependencies.is_empty() {
+            None
+        } else {
+            Some(d1.optional_dependencies)
+        };
 
-        let mut optional_dependencies: Option<HashMap<String, String>> =
-            Some(d1.optional_dependencies);
-
-        if optional_dependencies.as_ref().unwrap().is_empty() {
-            optional_dependencies = None;
-        }
-
-        let mut scripts: Option<HashMap<String, String>> = Some(d1.scripts);
-
-        if scripts.as_ref().unwrap().is_empty() {
-            scripts = None;
-        }
+        let scripts = if d1.scripts.is_empty() {
+            None
+        } else {
+            Some(d1.scripts)
+        };
 
         let bin: Option<Bin>;
 
@@ -257,6 +256,8 @@ async fn main() {
                 .keys()
                 .map(|v| v.to_owned())
                 .collect::<Vec<String>>();
+
+            parent_versions.sort();
         }
 
         version_data.insert(
@@ -292,7 +293,6 @@ async fn main() {
 
     // let archived = unsafe { archived_root::<VoltResponse>(&bytes[..]) };
     // let deserialized: VoltResponse = VoltResponse::read_from_buffer(&bytes).unwrap();
-
     // println!("Rkyv, deser: {}", start.elapsed().as_secs_f32());
 }
 
