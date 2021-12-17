@@ -392,6 +392,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "805026a5d0141ffc30abb3be3173848ad46a1b1664fe632428479619a3644d77"
 
 [[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
 name = "http"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -786,6 +792,7 @@ dependencies = [
  "base64 0.13.0",
  "colored",
  "futures",
+ "hex 0.4.3",
  "indicatif",
  "isahc",
  "lz4",
@@ -950,13 +957,13 @@ dependencies = [
 
 [[package]]
 name = "ssri"
-version = "6.0.0"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4f8005e5f8b04b5bb0dbf97d3ef4869395d70039ce61479d5ea401ba53dd597"
+checksum = "a9cec0d388f39fbe79d7aa600e8d38053bf97b1bc8d350da7c0ba800d0f423f2"
 dependencies = [
  "base64 0.10.1",
  "digest",
- "hex",
+ "hex 0.3.2",
  "serde",
  "sha-1",
  "sha2",

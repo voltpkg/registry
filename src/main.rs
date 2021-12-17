@@ -28,6 +28,7 @@ use speedy::{Readable, Writable};
 
 use indicatif::{ProgressBar, ProgressStyle};
 use package::{Bin, Engine, Package, Version};
+use ssri::Integrity;
 use tokio::{
     self,
     sync::{mpsc, Mutex},
@@ -142,10 +143,13 @@ async fn main() {
 
         let integrity;
 
-        if d1.dist.integrity != String::new() {
-            integrity = d1.dist.integrity.clone();
+        if d1.dist.integrity != "" {
+            let ssri_parsed: Integrity = d1.dist.integrity.clone().parse().unwrap();
+            integrity = ssri_parsed.to_string();
         } else {
-            integrity = format!("sha1-{}", base64::encode(d1.dist.tarball.clone()));
+            let ssri_parsed: Integrity =
+                format!("sha1-{}", d1.dist.shasum).clone().parse().unwrap();
+            integrity = ssri_parsed.to_string();
         }
 
         // convert each of these into something that satisfies Option
@@ -248,7 +252,7 @@ async fn main() {
         };
 
         if d1.name.clone() == input_packages[0].clone() {
-            parent_version = d1.name.clone();
+            parent_version = d1.version.clone();
 
             parent_versions = dependency
                 .0
