@@ -148,7 +148,7 @@ async fn main() {
             integrity = ssri_parsed.to_string();
         } else {
             let ssri_parsed: Integrity =
-                format!("sha1-{}", d1.dist.shasum).clone().parse().unwrap();
+                format!("sha1-{}", d1.dist.shasum.clone()).parse().unwrap();
             integrity = ssri_parsed.to_string();
         }
 
