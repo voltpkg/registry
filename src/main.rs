@@ -18,23 +18,19 @@ pub mod package;
 use std::fs::File;
 
 use std::io::{Read, Write};
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::{collections::HashMap, sync::atomic::AtomicI16};
 
 use anyhow::{anyhow, Result};
 use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt};
+use reqwest::{Client, ClientBuilder};
 use speedy::{Readable, Writable};
 
-use indicatif::{ProgressBar, ProgressStyle};
 use package::{Bin, Engine, Package, Version};
-use ssri::Integrity;
 use tokio::{
     self,
     sync::{mpsc, Mutex},
 };
-
-use colored::Colorize;
 
 use std::process::Command;
 use std::sync::atomic::Ordering;
@@ -124,10 +120,11 @@ async fn main() {
 
     std::env::set_current_dir("installs/").unwrap();
 
-    Command::new("npm")
-        .arg("i")
-        .arg("--package-lock-only")
-        .arg(input_packages[0].clone())
+    Command::new("cmd")
+        .args([
+            "/C",
+            &format!("npm i --package-lock-only {}", input_packages[0].clone()),
+        ])
         .spawn()
         .unwrap()
         .wait()
@@ -163,6 +160,37 @@ async fn main() {
             })
             .collect(),
     };
+
+    let parent_package_res = http_manager::get_package(&input_packages[0]).await;
+
+    let mut parent_package_version = String::new();
+
+    for (name, data) in cleaned_up_lockfile.packages.iter() {
+        if name == &input_packages[0] {
+            parent_package_version = data.version.clone();
+        }
+        // fetch metadata for every package
+        // println!("{}", name);
+
+        // add it to VoltResponse
+    }
+
+    let mut tree: HashMap<String, VoltPackage> = HashMap::new();
+
+    let mut response: VoltResponse = VoltResponse {
+        version: parent_package_version,
+        versions: parent_package_res.versions.into_keys().collect(),
+        tree,
+    };
+
+    let mut client = ClientBuilder::new().use_rustls_tls().build().unwrap();
+
+    for (package, data) in cleaned_up_lockfile.packages.iter() {
+        // get package metadata
+        let res = http_manager::get_package_version(&package, &data.version, &client).await;
+    }
+
+    // println!("{:#?}", cleaned_up_lockfile);
 
     std::process::exit(0);
 

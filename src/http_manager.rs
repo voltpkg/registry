@@ -15,8 +15,9 @@
 */
 
 // Crate Level Imports
-use crate::package::Package;
+use crate::package::{Package, Version};
 use isahc::AsyncReadResponseExt;
+use reqwest::Client;
 
 /// Request a package from `registry.yarnpkg.com`
 ///
@@ -39,7 +40,40 @@ pub async fn get_package(name: &str) -> Package {
         .build()
         .unwrap();
 
-    let mut resp = client.get_async(format!("https://registry.npmjs.com/{}", name))
+    let mut resp = client
+        .get_async(format!("https://registry.npmjs.com/{}", name))
+        .await
+        .unwrap();
+
+    let body_string = resp.text().await.unwrap();
+
+    serde_json::from_str(&body_string).unwrap_or_else(|e| {
+        println!("{}", body_string);
+        println!("{}: {}", name, e);
+        std::process::exit(1);
+    })
+}
+
+/// Request a package from `registry.yarnpkg.com`
+///
+/// Uses `chttp` async implementation to send a `get` request for the package
+/// ## Arguments
+/// * `name` - Name of the package to request from `registry.yarnpkg.com`
+/// ## Examples
+/// ```
+/// // Await an async response
+/// get_package("react").await;
+/// ```
+/// ## Returns
+/// * `Result<Option<Package>, GetPackageError>`
+pub async fn get_package_version(name: &str, version: &str, client: &Client) -> Version {
+    let resp = client
+        .get(format!("https://registry.npmjs.com/{}/{}", name, version))
+        .header(
+            "Accept",
+            "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*",
+        )
+        .send()
         .await
         .unwrap();
 
