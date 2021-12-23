@@ -1,0 +1,10 @@
+{
+    "name": "installs",
+    "version": "0.1.0",
+    "main": "index.js",
+    "author": "XtremeDevX <xtremedevx@gmail.com>",
+    "license": "Mit",
+    "dependencies": {
+        "express": "^4.17.2"
+    }
+}
