@@ -103,20 +103,6 @@ async fn main() {
     let mut input_packages: Vec<String> = std::env::args().collect();
 
     input_packages.remove(0);
-    let (tx, mut rx) = mpsc::channel(100);
-    let add = Main::new(tx);
-
-    {
-        let packages = input_packages.clone();
-        for package_name in packages {
-            let mut add = add.clone();
-            tokio::spawn(async move {
-                add.get_dependency_tree(package_name.clone(), None)
-                    .await
-                    .ok();
-            });
-        }
-    }
 
     std::env::set_current_dir("installs/").unwrap();
 
