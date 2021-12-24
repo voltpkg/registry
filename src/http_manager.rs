@@ -67,6 +67,10 @@ pub async fn get_package(name: &str) -> Package {
 /// ## Returns
 /// * `Result<Option<Package>, GetPackageError>`
 pub async fn get_package_version(name: &str, version: &str, client: &Client) -> Version {
+    println!(
+        "{}",
+        format!("https://registry.npmjs.com/{}/{}", name, version)
+    );
     let resp = client
         .get(format!("https://registry.npmjs.com/{}/{}", name, version))
         .header(

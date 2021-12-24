@@ -21,19 +21,18 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 use std::{collections::HashMap, sync::atomic::AtomicI16};
 
-use anyhow::{anyhow, Result};
-use futures::{future::BoxFuture, stream::FuturesUnordered, FutureExt, StreamExt};
 use reqwest::{Client, ClientBuilder};
 use speedy::{Readable, Writable};
 
+use async_recursion::async_recursion;
 use package::{Bin, Engine, Package, Version};
+use ssri::Integrity;
 use tokio::{
     self,
     sync::{mpsc, Mutex},
 };
 
 use std::process::Command;
-use std::sync::atomic::Ordering;
 
 #[derive(Clone)]
 pub struct Main {
@@ -81,8 +80,170 @@ pub struct PackageLock {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LockFilePackage {
     version: String,
+    resolved: Option<String>,
     #[serde(default)]
     dependencies: HashMap<String, String>,
+}
+
+#[async_recursion]
+async fn fetch_append_package(
+    lockfile: &PackageLock,
+    package: String,
+    details: &LockFilePackage,
+    client: &Client,
+    tree: &mut HashMap<String, VoltPackage>,
+) {
+    if package != "" {
+        println!("{}", package);
+        // get package metadata
+        let data = http_manager::get_package_version(&package, &details.version, client).await;
+
+        let integrity;
+
+        if data.dist.integrity != "" {
+            let ssri_parsed: Integrity = data.dist.integrity.clone().parse().unwrap();
+            integrity = ssri_parsed.to_string();
+        } else {
+            let ssri_parsed: Integrity = format!("sha1-{}", data.dist.shasum.clone())
+                .parse()
+                .unwrap();
+            integrity = ssri_parsed.to_string();
+        }
+
+        let peer_dependencies = if data.peer_dependencies.is_empty() {
+            None
+        } else {
+            Some(data.peer_dependencies)
+        };
+
+        let optional_dependencies = if data.optional_dependencies.is_empty() {
+            None
+        } else {
+            Some(data.optional_dependencies)
+        };
+
+        let scripts = if data.scripts.is_empty() {
+            None
+        } else {
+            Some(data.scripts)
+        };
+
+        let bin: Option<Bin>;
+
+        match data.bin {
+            Bin::String(string) => {
+                if string.is_empty() {
+                    bin = None;
+                } else {
+                    bin = Some(Bin::String(string));
+                }
+            }
+            Bin::Map(map) => {
+                if map.is_empty() {
+                    bin = None;
+                } else {
+                    bin = Some(Bin::Map(map));
+                }
+            }
+        }
+
+        let mut overrides: Option<HashMap<String, String>> = Some(data.overrides);
+
+        if overrides.as_ref().unwrap().is_empty() {
+            overrides = None;
+        }
+
+        let engines: Option<Engine>;
+
+        match data.engines {
+            Engine::String(string) => {
+                if string.is_empty() {
+                    engines = None;
+                } else {
+                    engines = Some(Engine::String(string));
+                }
+            }
+            Engine::List(vec) => {
+                if vec.is_empty() {
+                    engines = None;
+                } else {
+                    engines = Some(Engine::List(vec));
+                }
+            }
+            Engine::Map(map) => {
+                if map.is_empty() {
+                    engines = None;
+                } else {
+                    engines = Some(Engine::Map(map));
+                }
+            }
+        }
+
+        let mut os: Option<Vec<String>> = Some(data.os);
+
+        if os.as_ref().unwrap().is_empty() {
+            os = None;
+        }
+
+        let mut cpu: Option<Vec<String>> = Some(data.cpu);
+
+        if cpu.as_ref().unwrap().is_empty() {
+            cpu = None;
+        }
+
+        let mut dependencies = Some(HashMap::new());
+
+        println!("{} has dependencies {:?}", package, details.dependencies);
+        for (name, _) in details.dependencies.iter() {
+            for (package, metadata) in lockfile.packages.iter() {
+                if package == name || package == &format!("{}/{}", data.name, name) {
+                    let mut package = package.clone();
+
+                    let split = package
+                        .split("/")
+                        .map(|v| v.to_string())
+                        .collect::<Vec<String>>();
+
+                    if split.len() > 1 && !package.contains("@") {
+                        package = package.replace(&format!("/{}", split.last().unwrap()), "");
+                    }
+
+                    fetch_append_package(
+                        &lockfile,
+                        package.replace(&format!("{}/", &data.name), "").to_string(),
+                        metadata,
+                        client,
+                        tree,
+                    )
+                    .await;
+                }
+            }
+        }
+
+        if dependencies.as_ref().unwrap().is_empty() {
+            dependencies = None;
+        }
+
+        tree.insert(
+            format!("{}@{}", data.name, data.version),
+            VoltPackage {
+                name: data.name,
+                version: data.version,
+                integrity,
+                tarball: details.resolved.as_ref().unwrap().clone(),
+                bin,
+                scripts,
+                dependencies,
+                peer_dependencies,
+                peer_dependencies_meta: None,
+                optional_dependencies,
+                overrides,
+                engines,
+                os,
+                cpu,
+            },
+        );
+    }
 }
 
 #[tokio::main]
@@ -136,6 +297,7 @@ async fn main() {
                     name.replace("node_modules/", ""),
                     LockFilePackage {
                         version: package.version,
+                        resolved: package.resolved,
                         dependencies: package
                             .dependencies
                             .into_iter()
@@ -155,10 +317,6 @@ async fn main() {
         if name == &input_packages[0] {
             parent_package_version = data.version.clone();
         }
-        // fetch metadata for every package
-        // println!("{}", name);
-
-        // add it to VoltResponse
     }
 
     let mut tree: HashMap<String, VoltPackage> = HashMap::new();
@@ -166,15 +324,40 @@ async fn main() {
     let mut response: VoltResponse = VoltResponse {
         version: parent_package_version,
         versions: parent_package_res.versions.into_keys().collect(),
-        tree,
+        tree: HashMap::new(),
     };
 
-    let mut client = ClientBuilder::new().use_rustls_tls().build().unwrap();
+    let client = ClientBuilder::new().use_rustls_tls().build().unwrap();
 
     for (package, data) in cleaned_up_lockfile.packages.iter() {
-        // get package metadata
-        let res = http_manager::get_package_version(&package, &data.version, &client).await;
+        let mut package = package.clone();
+
+        // cases
+        // @babel/compiler
+        // send/ms
+
+        let split = package
+            .split("/")
+            .map(|v| v.to_string())
+            .collect::<Vec<String>>();
+
+        if split.len() > 1 && !package.contains("@") {
+            package = package.replace(&format!("/{}", split.last().unwrap()), "");
+        }
+
+        println!("{}", package);
+
+        fetch_append_package(
+            &cleaned_up_lockfile,
+            package.to_string(),
+            data,
+            &client,
+            &mut tree,
+        )
+        .await;
     }
+
+    response.tree = tree;
 
     // println!("{:#?}", cleaned_up_lockfile);
 
@@ -229,110 +412,110 @@ async fn main() {
     //         deps = None;
     //     }
 
-    //     let d1 = dependency.1.clone();
+    //     let data = dependency.1.clone();
 
-    //     let integrity;
+    // let integrity;
 
-    //     if d1.dist.integrity != "" {
-    //         let ssri_parsed: Integrity = d1.dist.integrity.clone().parse().unwrap();
-    //         integrity = ssri_parsed.to_string();
-    //     } else {
-    //         let ssri_parsed: Integrity =
-    //             format!("sha1-{}", d1.dist.shasum.clone()).parse().unwrap();
-    //         integrity = ssri_parsed.to_string();
-    //     }
+    // if data.dist.integrity != "" {
+    //     let ssri_parsed: Integrity = data.dist.integrity.clone().parse().unwrap();
+    //     integrity = ssri_parsed.to_string();
+    // } else {
+    //     let ssri_parsed: Integrity =
+    //         format!("sha1-{}", data.dist.shasum.clone()).parse().unwrap();
+    //     integrity = ssri_parsed.to_string();
+    // }
 
-    //     // convert each of these into something that satisfies Option
-    //     let peer_dependencies = if d1.peer_dependencies.is_empty() {
-    //         None
-    //     } else {
-    //         Some(d1.peer_dependencies)
-    //     };
+    // // convert each of these into something that satisfies Option
+    // let peer_dependencies = if data.peer_dependencies.is_empty() {
+    //     None
+    // } else {
+    //     Some(data.peer_dependencies)
+    // };
 
-    //     let optional_dependencies = if d1.optional_dependencies.is_empty() {
-    //         None
-    //     } else {
-    //         Some(d1.optional_dependencies)
-    //     };
+    // let optional_dependencies = if data.optional_dependencies.is_empty() {
+    //     None
+    // } else {
+    //     Some(data.optional_dependencies)
+    // };
 
-    //     let scripts = if d1.scripts.is_empty() {
-    //         None
-    //     } else {
-    //         Some(d1.scripts)
-    //     };
+    // let scripts = if data.scripts.is_empty() {
+    //     None
+    // } else {
+    //     Some(data.scripts)
+    // };
 
-    //     let bin: Option<Bin>;
+    // let bin: Option<Bin>;
 
-    //     match d1.bin {
-    //         Bin::String(string) => {
-    //             if string.is_empty() {
-    //                 bin = None;
-    //             } else {
-    //                 bin = Some(Bin::String(string));
-    //             }
-    //         }
-    //         Bin::Map(map) => {
-    //             if map.is_empty() {
-    //                 bin = None;
-    //             } else {
-    //                 bin = Some(Bin::Map(map));
-    //             }
+    // match data.bin {
+    //     Bin::String(string) => {
+    //         if string.is_empty() {
+    //             bin = None;
+    //         } else {
+    //             bin = Some(Bin::String(string));
     //         }
     //     }
-
-    //     let mut overrides: Option<HashMap<String, String>> = Some(d1.overrides);
-
-    //     if overrides.as_ref().unwrap().is_empty() {
-    //         overrides = None;
-    //     }
-
-    //     let engines: Option<Engine>;
-
-    //     match d1.engines {
-    //         Engine::String(string) => {
-    //             if string.is_empty() {
-    //                 engines = None;
-    //             } else {
-    //                 engines = Some(Engine::String(string));
-    //             }
-    //         }
-    //         Engine::List(vec) => {
-    //             if vec.is_empty() {
-    //                 engines = None;
-    //             } else {
-    //                 engines = Some(Engine::List(vec));
-    //             }
-    //         }
-    //         Engine::Map(map) => {
-    //             if map.is_empty() {
-    //                 engines = None;
-    //             } else {
-    //                 engines = Some(Engine::Map(map));
-    //             }
+    //     Bin::Map(map) => {
+    //         if map.is_empty() {
+    //             bin = None;
+    //         } else {
+    //             bin = Some(Bin::Map(map));
     //         }
     //     }
+    // }
 
-    //     let mut os: Option<Vec<String>> = Some(d1.os);
+    // let mut overrides: Option<HashMap<String, String>> = Some(data.overrides);
 
-    //     if os.as_ref().unwrap().is_empty() {
-    //         os = None;
+    // if overrides.as_ref().unwrap().is_empty() {
+    //     overrides = None;
+    // }
+
+    // let engines: Option<Engine>;
+
+    // match data.engines {
+    //     Engine::String(string) => {
+    //         if string.is_empty() {
+    //             engines = None;
+    //         } else {
+    //             engines = Some(Engine::String(string));
+    //         }
     //     }
-
-    //     let mut cpu: Option<Vec<String>> = Some(d1.cpu);
-
-    //     if cpu.as_ref().unwrap().is_empty() {
-    //         cpu = None;
+    //     Engine::List(vec) => {
+    //         if vec.is_empty() {
+    //             engines = None;
+    //         } else {
+    //             engines = Some(Engine::List(vec));
+    //         }
     //     }
+    //     Engine::Map(map) => {
+    //         if map.is_empty() {
+    //             engines = None;
+    //         } else {
+    //             engines = Some(Engine::Map(map));
+    //         }
+    //     }
+    // }
+
+    // let mut os: Option<Vec<String>> = Some(data.os);
+
+    // if os.as_ref().unwrap().is_empty() {
+    //     os = None;
+    // }
+
+    // let mut cpu: Option<Vec<String>> = Some(data.cpu);
+
+    // if cpu.as_ref().unwrap().is_empty() {
+    //     cpu = None;
+    // }
 
     //     let package = VoltPackage {
-    //         name: d1.name.clone(),
-    //         version: d1.version.clone(),
+    //         name: data.name.clone(),
+    //         version: data.version.clone(),
     //         dependencies: deps,
     //         peer_dependencies,
     //         integrity,
     //         bin,
     //         scripts,
-    //         tarball: d1.dist.tarball.clone(),
+    //         tarball: data.dist.tarball.clone(),
     //         peer_dependencies_meta: None,
     //         optional_dependencies,
     //         overrides,
@@ -341,8 +524,8 @@ async fn main() {
     //         cpu,
     //     };
 
-    //     if d1.name.clone() == input_packages[0].clone() {
-    //         parent_version = d1.version.clone();
+    //     if data.name.clone() == input_packages[0].clone() {
+    //         parent_version = data.version.clone();
 
     //         parent_versions = dependency
     //             .0
@@ -355,7 +538,7 @@ async fn main() {
     //     }
 
     //     version_data.insert(
-    //         format!("{}@{}", d1.name.clone(), d1.version.clone()),
+    //         format!("{}@{}", data.name.clone(), data.version.clone()),
     //         package,
     //     );
     // }
@@ -388,122 +571,4 @@ async fn main() {
     // let archived = unsafe { archived_root::<VoltResponse>(&bytes[..]) };
     // let deserialized: VoltResponse = VoltResponse::read_from_buffer(&bytes).unwrap();
     // println!("Rkyv, deser: {}", start.elapsed().as_secs_f32());
-}
-
-impl Main {
-    fn new(progress_sender: mpsc::Sender<()>) -> Self {
-        Self {
-            dependencies: Arc::new(Mutex::new(Vec::with_capacity(1))),
-            total_dependencies: Arc::new(AtomicI16::new(0)),
-            sender: progress_sender,
-        }
-    }
-
-    async fn fetch_package(
-        package_name: &str,
-        version_range: Option<semver_rs::Range>,
-    ) -> Result<(Package, Version)> {
-        let package = http_manager::get_package(package_name).await;
-
-        let version: Version = match &version_range {
-            Some(req) => {
-                let mut available_versions: Vec<semver_rs::Version> = package
-                    .versions
-                    .iter()
-                    .filter_map(|(k, _)| semver_rs::Version::new(k).parse().ok())
-                    .collect();
-
-                available_versions.sort_by(|v1, v2| {
-                    semver_rs::compare(v1.to_string().as_str(), v2.to_string().as_str(), None)
-                        .unwrap()
-                });
-
-                available_versions.reverse();
-
-                available_versions
-                    .into_iter()
-                    .find(|v| req.test(v))
-                    .map(|v| package.versions.get(&v.to_string()))
-                    .flatten()
-            }
-            None => package.versions.get(&package.dist_tags.latest),
-        }
-        .ok_or_else(|| {
-            if version_range.is_some() {
-                anyhow!("Version for '{}' is not found", &package_name)
-            } else {
-                anyhow!("Unable to find latest version for '{}'", &package_name)
-            }
-        })?
-        .clone();
-
-        Ok((package, version))
-    }
-
-    fn get_dependency_tree(
-        &mut self,
-        package_name: String,
-        version_req: Option<semver_rs::Range>,
-    ) -> BoxFuture<'_, Result<()>> {
-        async move {
-            let pkg = Self::fetch_package(&package_name, version_req).await?;
-            let pkg_deps = pkg.1.dependencies.clone();
-
-            let should_download = self
-                .dependencies
-                .lock()
-                .map(|mut deps| {
-                    if !deps.iter().any(|(package, version)| {
-                        package.name == pkg.0.name && pkg.1.version == version.version
-                    }) {
-                        deps.push(pkg);
-                        true
-                    } else {
-                        false
-                    }
-                })
-                .await;
-
-            if !should_download {
-                return Ok(());
-            }
-
-            let mut workers = FuturesUnordered::new();
-
-            self.total_dependencies.store(
-                self.total_dependencies.load(Ordering::Relaxed) + 1,
-                Ordering::Relaxed,
-            );
-
-            for (name, version) in pkg_deps {
-                let range = semver_rs::Range::new(&version).parse().unwrap();
-
-                // Increase total
-                self.total_dependencies.store(
-                    self.total_dependencies.load(Ordering::Relaxed) + 1,
-                    Ordering::Relaxed,
-                );
-
-                let pkg_name = name.clone();
-                let mut self_copy = self.clone();
-                workers.push(tokio::spawn(async move {
-                    let res = self_copy.get_dependency_tree(pkg_name, Some(range)).await;
-
-                    // Increase completed
-                    self_copy.sender.send(()).await.ok();
-
-                    res
-                }));
-            }
-
-            while let Some(result) = workers.next().await {
-                result??
-            }
-
-            self.sender.send(()).await.ok();
-
-            Ok(())
-        }
-        .boxed()
-    }
 }
