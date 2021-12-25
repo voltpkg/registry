@@ -68,7 +68,7 @@ pub async fn get_package(name: &str) -> Package {
 /// * `Result<Option<Package>, GetPackageError>`
 pub async fn get_package_version(name: &str, version: &str, client: &Client) -> Version {
     println!(
-        "{}",
+        "i am fetching package: {}",
         format!("https://registry.npmjs.com/{}/{}", name, version)
     );
     let resp = client

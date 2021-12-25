@@ -18,19 +18,18 @@ pub mod package;
 use std::fs::File;
 
 use std::io::{Read, Write};
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, sync::atomic::AtomicI16};
 
+use futures::stream::FuturesUnordered;
 use reqwest::{Client, ClientBuilder};
 use speedy::{Readable, Writable};
 
 use async_recursion::async_recursion;
 use package::{Bin, Engine, Package, Version};
 use ssri::Integrity;
-use tokio::{
-    self,
-    sync::{mpsc, Mutex},
-};
+use tokio::{self, sync::mpsc};
 
 use std::process::Command;
 
@@ -67,7 +66,7 @@ struct VoltPackage {
 }
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PackageLock {
     name: String,
     version: String,
@@ -77,7 +76,7 @@ pub struct PackageLock {
     packages: HashMap<String, LockFilePackage>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LockFilePackage {
     version: String,
     resolved: Option<String>,
@@ -87,16 +86,17 @@ pub struct LockFilePackage {
 
 #[async_recursion]
 async fn fetch_append_package(
-    lockfile: &PackageLock,
+    lockfile: PackageLock,
     package: String,
-    details: &LockFilePackage,
-    client: &Client,
-    tree: &mut HashMap<String, VoltPackage>,
+    details: LockFilePackage,
+    client: Client,
+    tree: Arc<Mutex<HashMap<String, VoltPackage>>>,
 ) {
     if package != "" {
         println!("{}", package);
+
         // get package metadata
-        let data = http_manager::get_package_version(&package, &details.version, client).await;
+        let data = http_manager::get_package_version(&package, &details.version, &client).await;
 
         let integrity;
 
@@ -205,15 +205,15 @@ async fn fetch_append_package(
                         .collect::<Vec<String>>();
 
                     if split.len() > 1 && !package.contains("@") {
-                        package = package.replace(&format!("/{}", split.last().unwrap()), "");
+                        package = package.replace(&format!("{}/", split.first().unwrap()), "");
                     }
 
                     fetch_append_package(
-                        &lockfile,
-                        package.replace(&format!("{}/", &data.name), "").to_string(),
-                        metadata,
-                        client,
-                        tree,
+                        lockfile.clone(),
+                        package,
+                        metadata.clone(),
+                        client.clone(),
+                        tree.clone(),
                     )
                     .await;
                 }
@@ -224,7 +224,7 @@ async fn fetch_append_package(
             dependencies = None;
         }
 
-        tree.insert(
+        tree.lock().unwrap().insert(
             format!("{}@{}", data.name, data.version),
             VoltPackage {
                 name: data.name,
@@ -279,12 +279,13 @@ async fn main() {
             .unwrap();
     } else {
         Command::new("npm")
-            .args([
-                "/C",
-                &format!("npm i --package-lock-only {}", input_packages[0].clone()),
-            ])
-            .output()
-            .expect("failed to execute process");
+            .arg("i")
+            .arg("--package-lock-only")
+            .arg(input_packages[0].clone())
+            .spawn()
+            .unwrap()
+            .wait()
+            .unwrap();
     }
 
     let mut file = File::open("package-lock.json").unwrap();
@@ -329,7 +330,7 @@ async fn main() {
         }
     }
 
-    let mut tree: HashMap<String, VoltPackage> = HashMap::new();
+    let tree: HashMap<String, VoltPackage> = HashMap::new();
 
     let mut response: VoltResponse = VoltResponse {
         version: parent_package_version,
@@ -338,6 +339,8 @@ async fn main() {
     };
 
     let client = ClientBuilder::new().use_rustls_tls().build().unwrap();
+
+    let workers = FuturesUnordered::new();
 
     for (package, data) in cleaned_up_lockfile.packages.iter() {
         let mut package = package.clone();
@@ -352,233 +355,33 @@ async fn main() {
             .collect::<Vec<String>>();
 
         if split.len() > 1 && !package.contains("@") {
-            package = package.replace(&format!("/{}", split.last().unwrap()), "");
+            package = package.replace(&format!("{}/", split.first().unwrap()), "");
         }
 
-        println!("{}", package);
+        let cleaned_up_lockfile_instance = cleaned_up_lockfile.clone();
+        let data_instance = data.clone();
+        let client_instance = client.clone();
+        let tree_instance = tree.clone();
 
-        fetch_append_package(
-            &cleaned_up_lockfile,
-            package.to_string(),
-            data,
-            &client,
-            &mut tree,
-        )
-        .await;
+        workers.push(tokio::spawn(async move {
+            fetch_append_package(
+                cleaned_up_lockfile_instance,
+                package.to_string(),
+                data_instance,
+                client_instance,
+                Arc::new(Mutex::new(tree_instance)),
+            )
+            .await;
+        }));
     }
 
     response.tree = tree;
 
-    // println!("{:#?}", cleaned_up_lockfile);
-
-    std::process::exit(0);
-
-    // let progress_bar = ProgressBar::new(1);
-
-    // progress_bar.set_style(
-    //     ProgressStyle::default_bar()
-    //         .progress_chars("=> ")
-    //         .template(&format!(
-    //             "{} [{{bar:40.magenta/green}}] {{msg:.blue}}",
-    //             "Fetching dependencies".bright_blue()
-    //         )),
-    // );
-
-    // let mut done: i16 = 0;
-
-    // while rx.recv().await.is_some() {
-    //     done += 1;
-    //     let total = add.total_dependencies.load(Ordering::Relaxed);
-    //     if done == total {
-    //         break;
-    //     }
-    //     progress_bar.set_length(total as u64);
-    //     progress_bar.set_position(done as u64);
-    // }
-    // progress_bar.finish_with_message("[DONE]");
-
-    // println!(
-    //     "Resolved {} dependencies.",
-    //     add.dependencies
-    //         .lock()
-    //         .map(|deps| deps
-    //             .iter()
-    //             .map(|(dep, ver)| format!("{}: {}", dep.name, ver.version))
-    //             .count())
-    //         .await
-    // );
-
-    // let dependencies = Arc::try_unwrap(add.dependencies).unwrap().into_inner();
-
-    // let mut version_data: HashMap<String, VoltPackage> = HashMap::new();
-
-    // let mut parent_version: String = String::new();
-    // let mut parent_versions: Vec<String> = vec![];
-
-    // for dependency in dependencies.iter() {
-    //     let mut deps: Option<HashMap<String, String>> = Some(dependency.1.dependencies.clone());
-
-    //     if deps.as_ref().unwrap().len() == 0 {
-    //         deps = None;
-    //     }
-
-    //     let data = dependency.1.clone();
-
-    // let integrity;
-
-    // if data.dist.integrity != "" {
-    //     let ssri_parsed: Integrity = data.dist.integrity.clone().parse().unwrap();
-    //     integrity = ssri_parsed.to_string();
-    // } else {
-    //     let ssri_parsed: Integrity =
-    //         format!("sha1-{}", data.dist.shasum.clone()).parse().unwrap();
-    //     integrity = ssri_parsed.to_string();
-    // }
-
-    // // convert each of these into something that satisfies Option
-    // let peer_dependencies = if data.peer_dependencies.is_empty() {
-    //     None
-    // } else {
-    //     Some(data.peer_dependencies)
-    // };
-
-    // let optional_dependencies = if data.optional_dependencies.is_empty() {
-    //     None
-    // } else {
-    //     Some(data.optional_dependencies)
-    // };
-
-    // let scripts = if data.scripts.is_empty() {
-    //     None
-    // } else {
-    //     Some(data.scripts)
-    // };
-
-    // let bin: Option<Bin>;
-
-    // match data.bin {
-    //     Bin::String(string) => {
-    //         if string.is_empty() {
-    //             bin = None;
-    //         } else {
-    //             bin = Some(Bin::String(string));
-    //         }
-    //     }
-    //     Bin::Map(map) => {
-    //         if map.is_empty() {
-    //             bin = None;
-    //         } else {
-    //             bin = Some(Bin::Map(map));
-    //         }
-    //     }
-    // }
-
-    // let mut overrides: Option<HashMap<String, String>> = Some(data.overrides);
-
-    // if overrides.as_ref().unwrap().is_empty() {
-    //     overrides = None;
-    // }
-
-    // let engines: Option<Engine>;
-
-    // match data.engines {
-    //     Engine::String(string) => {
-    //         if string.is_empty() {
-    //             engines = None;
-    //         } else {
-    //             engines = Some(Engine::String(string));
-    //         }
-    //     }
-    //     Engine::List(vec) => {
-    //         if vec.is_empty() {
-    //             engines = None;
-    //         } else {
-    //             engines = Some(Engine::List(vec));
-    //         }
-    //     }
-    //     Engine::Map(map) => {
-    //         if map.is_empty() {
-    //             engines = None;
-    //         } else {
-    //             engines = Some(Engine::Map(map));
-    //         }
-    //     }
-    // }
-
-    // let mut os: Option<Vec<String>> = Some(data.os);
-
-    // if os.as_ref().unwrap().is_empty() {
-    //     os = None;
-    // }
-
-    // let mut cpu: Option<Vec<String>> = Some(data.cpu);
-
-    // if cpu.as_ref().unwrap().is_empty() {
-    //     cpu = None;
-    // }
-
-    //     let package = VoltPackage {
-    //         name: data.name.clone(),
-    //         version: data.version.clone(),
-    //         dependencies: deps,
-    //         peer_dependencies,
-    //         integrity,
-    //         bin,
-    //         scripts,
-    //         tarball: data.dist.tarball.clone(),
-    //         peer_dependencies_meta: None,
-    //         optional_dependencies,
-    //         overrides,
-    //         engines,
-    //         os,
-    //         cpu,
-    //     };
-
-    //     if data.name.clone() == input_packages[0].clone() {
-    //         parent_version = data.version.clone();
-
-    //         parent_versions = dependency
-    //             .0
-    //             .versions
-    //             .keys()
-    //             .map(|v| v.to_owned())
-    //             .collect::<Vec<String>>();
-
-    //         parent_versions.sort();
-    //     }
-
-    //     version_data.insert(
-    //         format!("{}@{}", data.name.clone(), data.version.clone()),
-    //         package,
-    //     );
-    // }
-
-    // let res: VoltResponse = VoltResponse {
-    //     version: parent_version,
-    //     versions: parent_versions,
-    //     tree: version_data,
-    // };
-
-    // let bytes = res.write_to_vec().unwrap();
+    // let bytes = response.write_to_vec().unwrap();
 
     // let mut file =
     //     File::create(PathBuf::from("packages").join(format!("{}.sp", input_packages[0].clone())))
     //         .unwrap();
 
     // file.write_all(&bytes).unwrap();
-
-    // deser
-    // drop(file);
-
-    // let mut file = File::open(format!("packages\\{}.rkyv", input_packages[0].clone())).unwrap();
-
-    // let start = std::time::Instant::now();
-
-    // let mut bytes: Vec<u8> = vec![];
-
-    // file.read_to_end(&mut bytes).unwrap();
-
-    // let archived = unsafe { archived_root::<VoltResponse>(&bytes[..]) };
-    // let deserialized: VoltResponse = VoltResponse::read_from_buffer(&bytes).unwrap();
-    // println!("Rkyv, deser: {}", start.elapsed().as_secs_f32());
 }
