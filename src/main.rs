@@ -23,6 +23,7 @@ use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, sync::atomic::AtomicI16};
 
 use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use reqwest::{Client, ClientBuilder};
 use speedy::{Readable, Writable};
 
@@ -191,7 +192,7 @@ async fn fetch_append_package(
             cpu = None;
         }
 
-        let mut dependencies = Some(HashMap::new());
+        let mut dependencies = HashMap::new();
 
         println!("{} has dependencies {:?}", package, details.dependencies);
         for (name, _) in details.dependencies.iter() {
@@ -208,6 +209,8 @@ async fn fetch_append_package(
                         package = package.replace(&format!("{}/", split.first().unwrap()), "");
                     }
 
+                    dependencies.insert(package.clone(), metadata.version.clone());
+
                     fetch_append_package(
                         lockfile.clone(),
                         package,
@@ -220,8 +223,12 @@ async fn fetch_append_package(
             }
         }
 
-        if dependencies.as_ref().unwrap().is_empty() {
-            dependencies = None;
+        let dependencies_option: Option<HashMap<String, String>>;
+
+        if dependencies.is_empty() {
+            dependencies_option = None;
+        } else {
+            dependencies_option = Some(dependencies);
         }
 
         tree.lock().unwrap().insert(
@@ -233,7 +240,7 @@ async fn fetch_append_package(
                 tarball: details.resolved.as_ref().unwrap().clone(),
                 bin,
                 scripts,
-                dependencies,
+                dependencies: dependencies_option,
                 peer_dependencies,
                 peer_dependencies_meta: None,
                 optional_dependencies,
@@ -340,7 +347,9 @@ async fn main() {
 
     let client = ClientBuilder::new().use_rustls_tls().build().unwrap();
 
-    let workers = FuturesUnordered::new();
+    let mut workers = FuturesUnordered::new();
+
+    let shared_tree = Arc::new(Mutex::new(tree));
 
     for (package, data) in cleaned_up_lockfile.packages.iter() {
         let mut package = package.clone();
@@ -361,7 +370,7 @@ async fn main() {
         let cleaned_up_lockfile_instance = cleaned_up_lockfile.clone();
         let data_instance = data.clone();
         let client_instance = client.clone();
-        let tree_instance = tree.clone();
+        let tree_instance = shared_tree.clone();
 
         workers.push(tokio::spawn(async move {
             fetch_append_package(
@@ -369,19 +378,25 @@ async fn main() {
                 package.to_string(),
                 data_instance,
                 client_instance,
-                Arc::new(Mutex::new(tree_instance)),
+                tree_instance,
             )
             .await;
         }));
     }
 
-    response.tree = tree;
+    while workers.next().await.is_some() {}
 
-    // let bytes = response.write_to_vec().unwrap();
+    response.tree = shared_tree.lock().unwrap().clone();
 
-    // let mut file =
-    //     File::create(PathBuf::from("packages").join(format!("{}.sp", input_packages[0].clone())))
-    //         .unwrap();
+    // println!("{:#?}", response);
+    
+    let bytes = response.write_to_vec().unwrap();
 
-    // file.write_all(&bytes).unwrap();
+    std::env::set_current_dir("/home/xtremedevx/dev/volt/registry").unwrap();
+
+    let mut file =
+        File::create(PathBuf::from("packages").join(format!("{}.sp", input_packages[0].clone())))
+            .unwrap();
+
+    file.write_all(&bytes).unwrap();
 }
