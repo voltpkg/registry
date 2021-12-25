@@ -120,15 +120,25 @@ async fn main() {
 
     std::env::set_current_dir("installs/").unwrap();
 
-    Command::new("cmd")
-        .args([
-            "/C",
-            &format!("npm i --package-lock-only {}", input_packages[0].clone()),
-        ])
-        .spawn()
-        .unwrap()
-        .wait()
-        .unwrap();
+    if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .args([
+                "/C",
+                &format!("npm i --package-lock-only {}", input_packages[0].clone()),
+            ])
+            .spawn()
+            .unwrap()
+            .wait()
+            .unwrap();
+    } else {
+        Command::new("npm")
+            .args([
+                "/C",
+                &format!("npm i --package-lock-only {}", input_packages[0].clone()),
+            ])
+            .output()
+            .expect("failed to execute process");
+    }
 
     let mut file = File::open("package-lock.json").unwrap();
 
@@ -183,7 +193,7 @@ async fn main() {
         tree,
     };
 
-    let mut client = ClientBuilder::new().use_rustls_tls().build().unwrap();
+    let client = ClientBuilder::new().use_rustls_tls().build().unwrap();
 
     for (package, data) in cleaned_up_lockfile.packages.iter() {
         // get package metadata
