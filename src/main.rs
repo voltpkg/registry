@@ -94,8 +94,6 @@ async fn fetch_append_package(
     tree: Arc<Mutex<HashMap<String, VoltPackage>>>,
 ) {
     if package != "" {
-        println!("{}", package);
-
         // get package metadata
         let data = http_manager::get_package_version(&package, &details.version, &client).await;
 
@@ -194,7 +192,6 @@ async fn fetch_append_package(
 
         let mut dependencies = HashMap::new();
 
-        println!("{} has dependencies {:?}", package, details.dependencies);
         for (name, _) in details.dependencies.iter() {
             for (package, metadata) in lockfile.packages.iter() {
                 if package == name || package == &format!("{}/{}", data.name, name) {
@@ -207,6 +204,26 @@ async fn fetch_append_package(
 
                     if split.len() > 1 && !package.contains("@") {
                         package = package.replace(&format!("{}/", split.first().unwrap()), "");
+                    } else if split.len() > 2 && package.contains("@") {
+                        if package.matches('@').count() == 2 {
+                            println!(
+                                "{} -> {}",
+                                package,
+                                format!(
+                                    "{}/{}",
+                                    split[split.len() - 2],
+                                    split.last().unwrap().clone()
+                                )
+                            );
+                            package = format!(
+                                "{}/{}",
+                                split[split.len() - 2],
+                                split.last().unwrap().clone()
+                            );
+                        } else {
+                            println!("{} -> {}", package, split.last().unwrap().clone());
+                            package = split.last().unwrap().clone();
+                        }
                     }
 
                     dependencies.insert(package.clone(), metadata.version.clone());
@@ -365,6 +382,29 @@ async fn main() {
 
         if split.len() > 1 && !package.contains("@") {
             package = package.replace(&format!("{}/", split.first().unwrap()), "");
+        } else if split.len() > 2 && package.contains("@") {
+            // @babel/core/ms -> ms
+
+            // @babel/helpers/@babel/types
+            if package.matches('@').count() == 2 {
+                println!(
+                    "{} -> {}",
+                    package,
+                    format!(
+                        "@{}/{}",
+                        split[split.len() - 2],
+                        split.last().unwrap().clone()
+                    )
+                );
+                package = format!(
+                    "{}/{}",
+                    split[split.len() - 2],
+                    split.last().unwrap().clone()
+                );
+            } else {
+                println!("{} -> {}", package, split.last().unwrap().clone());
+                package = split.last().unwrap().clone();
+            }
         }
 
         let cleaned_up_lockfile_instance = cleaned_up_lockfile.clone();
@@ -389,7 +429,7 @@ async fn main() {
     response.tree = shared_tree.lock().unwrap().clone();
 
     // println!("{:#?}", response);
-    
+
     let bytes = response.write_to_vec().unwrap();
 
     std::env::set_current_dir("/home/xtremedevx/dev/volt/registry").unwrap();

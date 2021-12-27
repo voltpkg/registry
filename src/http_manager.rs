@@ -67,10 +67,6 @@ pub async fn get_package(name: &str) -> Package {
 /// ## Returns
 /// * `Result<Option<Package>, GetPackageError>`
 pub async fn get_package_version(name: &str, version: &str, client: &Client) -> Version {
-    println!(
-        "i am fetching package: {}",
-        format!("https://registry.npmjs.com/{}/{}", name, version)
-    );
     let resp = client
         .get(format!("https://registry.npmjs.com/{}/{}", name, version))
         .header(
@@ -85,6 +81,7 @@ pub async fn get_package_version(name: &str, version: &str, client: &Client) -> 
 
     serde_json::from_str(&body_string).unwrap_or_else(|e| {
         println!("{}", body_string);
+        println!("https://registry.npmjs.com/{}/{}", name, version);
         println!("{}: {}", name, e);
         std::process::exit(1);
     })
