@@ -65,6 +65,7 @@ struct VoltPackage {
     pub os: Option<Vec<String>>,  // operating systems compatible with the package
     pub cpu: Option<Vec<String>>, // cpu architectures compatible with the package
 }
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
