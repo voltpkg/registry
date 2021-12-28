@@ -76,6 +76,7 @@ pub async fn get_package_version(name: &str, version: &str, client: &Client) -> 
         .send()
         .await
         .unwrap();
+    println!("https://registry.npmjs.com/{}/{}", name, version);
 
     let body_string = resp.text().await.unwrap();
 

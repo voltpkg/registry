@@ -202,40 +202,40 @@ async fn fetch_append_package(
                         .map(|v| v.to_string())
                         .collect::<Vec<String>>();
 
+                    // node_modules/send/ms
+                    // node_modules/send/node_modules/express/ms
                     if split.len() > 1 && !package.contains("@") {
-                        package = package.replace(&format!("{}/", split.first().unwrap()), "");
-                    } else if split.len() > 2 && package.contains("@") {
-                        if package.matches('@').count() == 2 {
-                            println!(
-                                "{} -> {}",
-                                package,
-                                format!(
-                                    "{}/{}",
-                                    split[split.len() - 2],
-                                    split.last().unwrap().clone()
-                                )
-                            );
-                            package = format!(
-                                "{}/{}",
-                                split[split.len() - 2],
-                                split.last().unwrap().clone()
-                            );
+                        package = split.last().unwrap().clone();
+                    }
+                    // node_modules/@babel/core
+                    // node_modules/@babel/core/node_modules/semver
+                    // node_modules/@babel/eslint-parser/node_modules/eslint-scope
+                    else if split.len() > 1 && package.contains("@") {
+                        let scope = split[split.len() - 2].clone();
+
+                        if scope.contains('@') {
+                            package = format!("{}/{}", scope, split.last().unwrap());
                         } else {
-                            println!("{} -> {}", package, split.last().unwrap().clone());
                             package = split.last().unwrap().clone();
                         }
                     }
 
                     dependencies.insert(package.clone(), metadata.version.clone());
 
-                    fetch_append_package(
-                        lockfile.clone(),
+                    if !tree.lock().unwrap().contains_key(&format!(
+                        "{}@{}",
                         package,
-                        metadata.clone(),
-                        client.clone(),
-                        tree.clone(),
-                    )
-                    .await;
+                        metadata.version.clone()
+                    )) {
+                        fetch_append_package(
+                            lockfile.clone(),
+                            package,
+                            metadata.clone(),
+                            client.clone(),
+                            tree.clone(),
+                        )
+                        .await;
+                    }
                 }
             }
         }
@@ -381,28 +381,13 @@ async fn main() {
             .collect::<Vec<String>>();
 
         if split.len() > 1 && !package.contains("@") {
-            package = package.replace(&format!("{}/", split.first().unwrap()), "");
-        } else if split.len() > 2 && package.contains("@") {
-            // @babel/core/ms -> ms
+            package = split.last().unwrap().clone();
+        } else if split.len() > 1 && package.contains("@") {
+            let scope = split[split.len() - 2].clone();
 
-            // @babel/helpers/@babel/types
-            if package.matches('@').count() == 2 {
-                println!(
-                    "{} -> {}",
-                    package,
-                    format!(
-                        "@{}/{}",
-                        split[split.len() - 2],
-                        split.last().unwrap().clone()
-                    )
-                );
-                package = format!(
-                    "{}/{}",
-                    split[split.len() - 2],
-                    split.last().unwrap().clone()
-                );
+            if scope.contains('@') {
+                package = format!("{}/{}", scope, split.last().unwrap());
             } else {
-                println!("{} -> {}", package, split.last().unwrap().clone());
                 package = split.last().unwrap().clone();
             }
         }
