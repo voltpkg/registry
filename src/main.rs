@@ -52,6 +52,7 @@ struct VoltResponse {
 struct VoltPackage {
     pub name: String,                                       // the name of the package
     pub version: String,                                    // the version of the package
+    pub optional: bool,    // whether the package is optional or not
     pub integrity: String, // sha-1 base64 encoded hash or the "integrity" field if it exists
     pub tarball: String,   // url to the tarball to fetch
     pub bin: Option<Bin>,  // binary scripts required by / for the package
@@ -70,18 +71,15 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PackageLock {
-    name: String,
-    version: String,
-    #[serde(rename = "lockfileVersion")]
-    lockfile_version: u8,
     #[serde(default)]
     packages: HashMap<String, LockFilePackage>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LockFilePackage {
+    #[serde(skip)]
     version: String,
-    resolved: Option<String>,
+
     #[serde(default)]
     dependencies: HashMap<String, String>,
 }
@@ -254,8 +252,9 @@ async fn fetch_append_package(
             VoltPackage {
                 name: data.name,
                 version: data.version,
+                optional: false,
                 integrity,
-                tarball: details.resolved.as_ref().unwrap().clone(),
+                tarball: format!("https://registry.npmjs.org"),
                 bin,
                 scripts,
                 dependencies: dependencies_option,
@@ -322,18 +321,26 @@ async fn main() {
     let lock = serde_yaml::from_str::<PackageLock>(&package_lock_contents).unwrap();
 
     let cleaned_up_lockfile = PackageLock {
-        name: lock.name,
-        version: lock.version,
-        lockfile_version: lock.lockfile_version,
         packages: lock
             .packages
             .into_iter()
             .map(|(name, package)| {
                 (
-                    name.replace("node_modules/", ""),
+                    // express/1.2.3
+                    if !name.clone()[1..].starts_with("@") {
+                        name[1..].replace("/", "@")
+                    } else {
+                        let cleaned_name = &name[1..];
+                        // @babel/core/7.0.0
+                        let split = cleaned_name.split('/').collect::<Vec<&str>>();
+                        format!(
+                            "{}@{}",
+                            split[..split.len() - 1].join("/"),
+                            split.last().unwrap()
+                        )
+                    },
                     LockFilePackage {
-                        version: package.version,
-                        resolved: package.resolved,
+                        version: name.split("/").last().unwrap().to_string(),
                         dependencies: package
                             .dependencies
                             .into_iter()
@@ -344,6 +351,8 @@ async fn main() {
             })
             .collect(),
     };
+
+    println!("{:#?}", cleaned_up_lockfile);
 
     let parent_package_res = http_manager::get_package(&input_packages[0]).await;
 
