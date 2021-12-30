@@ -296,16 +296,16 @@ async fn main() {
         Command::new("cmd")
             .args([
                 "/C",
-                &format!("npm i --package-lock-only {}", input_packages[0].clone()),
+                &format!("pnpm add --lockfile-only {}", input_packages[0].clone()),
             ])
             .spawn()
             .unwrap()
             .wait()
             .unwrap();
     } else {
-        Command::new("npm")
-            .arg("i")
-            .arg("--package-lock-only")
+        Command::new("pnpm")
+            .arg("add")
+            .arg("--lockfile-only")
             .arg(input_packages[0].clone())
             .spawn()
             .unwrap()
@@ -313,13 +313,13 @@ async fn main() {
             .unwrap();
     }
 
-    let mut file = File::open("package-lock.json").unwrap();
+    let mut file = File::open("pnpm-lock.yaml").unwrap();
 
     let mut package_lock_contents: String = String::new();
 
     file.read_to_string(&mut package_lock_contents).unwrap();
 
-    let lock = serde_json::from_str::<PackageLock>(&package_lock_contents).unwrap();
+    let lock = serde_yaml::from_str::<PackageLock>(&package_lock_contents).unwrap();
 
     let cleaned_up_lockfile = PackageLock {
         name: lock.name,
