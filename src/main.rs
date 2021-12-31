@@ -379,28 +379,7 @@ async fn main() {
     let shared_tree = Arc::new(Mutex::new(tree));
 
     for (package, data) in cleaned_up_lockfile.packages.iter() {
-        let mut package = package.clone();
-
-        // cases
-        // @babel/compiler
-        // send/ms
-
-        let split = package
-            .split("/")
-            .map(|v| v.to_string())
-            .collect::<Vec<String>>();
-
-        if split.len() > 1 && !package.contains("@") {
-            package = split.last().unwrap().clone();
-        } else if split.len() > 1 && package.contains("@") {
-            let scope = split[split.len() - 2].clone();
-
-            if scope.contains('@') {
-                package = format!("{}/{}", scope, split.last().unwrap());
-            } else {
-                package = split.last().unwrap().clone();
-            }
-        }
+        let package = package.clone();
 
         let cleaned_up_lockfile_instance = cleaned_up_lockfile.clone();
         let data_instance = data.clone();

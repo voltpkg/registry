@@ -68,7 +68,11 @@ pub async fn get_package(name: &str) -> Package {
 /// * `Result<Option<Package>, GetPackageError>`
 pub async fn get_package_version(name: &str, version: &str, client: &Client) -> Version {
     let resp = client
-        .get(format!("https://registry.npmjs.com/{}/{}", name, version))
+        .get(format!(
+            "https://registry.npmjs.com/{}/{}",
+            name.replace(format!("@{}", version).as_str(), ""),
+            version
+        ))
         .header(
             "Accept",
             "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*",
@@ -76,7 +80,12 @@ pub async fn get_package_version(name: &str, version: &str, client: &Client) -> 
         .send()
         .await
         .unwrap();
-    println!("https://registry.npmjs.com/{}/{}", name, version);
+
+    println!(
+        "https://registry.npmjs.com/{}/{}",
+        name.replace(format!("@{}", version).as_str(), ""),
+        version
+    );
 
     let body_string = resp.text().await.unwrap();
 
