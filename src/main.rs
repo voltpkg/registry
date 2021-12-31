@@ -254,7 +254,7 @@ async fn fetch_append_package(
                 version: data.version,
                 optional: false,
                 integrity,
-                tarball: format!("https://registry.npmjs.org"),
+                tarball: data.dist.tarball,
                 bin,
                 scripts,
                 dependencies: dependencies_option,
@@ -402,7 +402,7 @@ async fn main() {
 
     response.tree = shared_tree.lock().unwrap().clone();
 
-    // println!("{:#?}", response);
+    println!("{:#?}", response);
 
     let bytes = response.write_to_vec().unwrap();
 

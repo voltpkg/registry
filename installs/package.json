@@ -5,6 +5,6 @@
     "author": "XtremeDevX <xtremedevx@gmail.com>",
     "license": "Mit",
     "dependencies": {
-        "expo": "^44.0.3"
+        "express": "^4.17.2"
     }
 }
