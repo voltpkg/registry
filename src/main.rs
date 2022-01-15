@@ -191,9 +191,18 @@ async fn fetch_append_package(
 
         let mut dependencies = HashMap::new();
 
-        for (name, _) in details.dependencies.iter() {
+        for (name, version) in details.dependencies.iter() {
             for (package, metadata) in lockfile.packages.iter() {
-                if package == name || package == &format!("{}/{}", data.name, name) {
+                // println!(
+                //     "{} vs {} or {}",
+                //     package,
+                //     format!("{name}@{version}").as_str(),
+                //     format!("{}/{name}@{version}", data.name).as_str()
+                // );
+
+                if package == &format!("{name}@{version}")
+                    || package == &format!("{}/{name}@{version}", data.name)
+                {
                     let mut package = package.clone();
 
                     let split = package
@@ -219,6 +228,7 @@ async fn fetch_append_package(
                         }
                     }
 
+                    println!("hi");
                     dependencies.insert(package.clone(), metadata.version.clone());
 
                     if !tree.lock().unwrap().contains_key(&format!(
@@ -352,8 +362,6 @@ async fn main() {
             .collect(),
     };
 
-    println!("{:#?}", cleaned_up_lockfile);
-
     let parent_package_res = http_manager::get_package(&input_packages[0]).await;
 
     let mut parent_package_version = String::new();
@@ -402,11 +410,13 @@ async fn main() {
 
     response.tree = shared_tree.lock().unwrap().clone();
 
-    println!("{:#?}", response);
-
     let bytes = response.write_to_vec().unwrap();
 
-    std::env::set_current_dir("/home/xtremedevx/dev/volt/registry").unwrap();
+    if cfg!(unix) {
+        std::env::set_current_dir("/home/xtremedevx/dev/volt/registry").unwrap();
+    } else {
+        std::env::set_current_dir(r"C:\Users\xtrem\Desktop\volt\registry").unwrap();
+    }
 
     let mut file =
         File::create(PathBuf::from("packages").join(format!("{}.sp", input_packages[0].clone())))
