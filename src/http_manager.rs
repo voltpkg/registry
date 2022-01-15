@@ -81,12 +81,6 @@ pub async fn get_package_version(name: &str, version: &str, client: &Client) -> 
         .await
         .unwrap();
 
-    println!(
-        "https://registry.npmjs.com/{}/{}",
-        name.replace(format!("@{}", version).as_str(), ""),
-        version
-    );
-
     let body_string = resp.text().await.unwrap();
 
     serde_json::from_str(&body_string).unwrap_or_else(|e| {

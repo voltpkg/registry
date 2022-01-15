@@ -93,6 +93,7 @@ async fn fetch_append_package(
     tree: Arc<Mutex<HashMap<String, VoltPackage>>>,
 ) {
     if package != "" {
+        println!("Fetching {}", package);
         // get package metadata
         let data = http_manager::get_package_version(&package, &details.version, &client).await;
 
@@ -228,7 +229,6 @@ async fn fetch_append_package(
                         }
                     }
 
-                    println!("hi");
                     dependencies.insert(package.clone(), metadata.version.clone());
 
                     if !tree.lock().unwrap().contains_key(&format!(
