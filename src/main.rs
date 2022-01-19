@@ -360,10 +360,14 @@ async fn main() {
     let mut parent_package_version = String::new();
 
     for (name, data) in cleaned_up_lockfile.packages.iter() {
-        let name = name.replace(&format!("@{}", &data.version), "");
-
-        if name == input_packages[0].clone() {
-            parent_package_version = data.version.clone();
+        if let Some(name) = name
+            .strip_suffix(&data.version)
+            .and_then(|n| n.strip_suffix('@'))
+        {
+            if name == input_packages[0] {
+                parent_package_version = data.version.clone();
+                break;
+            }
         }
     }
 
