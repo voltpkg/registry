@@ -194,13 +194,6 @@ async fn fetch_append_package(
 
         for (name, version) in details.dependencies.iter() {
             for (package, metadata) in lockfile.packages.iter() {
-                // println!(
-                //     "{} vs {} or {}",
-                //     package,
-                //     format!("{name}@{version}").as_str(),
-                //     format!("{}/{name}@{version}", data.name).as_str()
-                // );
-
                 if package == &format!("{name}@{version}")
                     || package == &format!("{}/{name}@{version}", data.name)
                 {
@@ -367,7 +360,9 @@ async fn main() {
     let mut parent_package_version = String::new();
 
     for (name, data) in cleaned_up_lockfile.packages.iter() {
-        if name == &input_packages[0] {
+        let name = name.replace(&format!("@{}", &data.version), "");
+
+        if name == input_packages[0].clone() {
             parent_package_version = data.version.clone();
         }
     }
